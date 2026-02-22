@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard | Fisch Analytics</title>
+    <link rel="icon" type="image/x-icon" href="{{ asset('icon.ico') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -76,10 +77,14 @@
             <form action="{{ route('track.player') }}" method="POST" class="flex w-full sm:w-auto gap-2">
                 @csrf
                 <input type="text" name="player_name" placeholder="Track a Username..." required class="px-4 py-2 rounded-sm w-full text-sm">
-                <button type="submit" class="btn px-4 py-2 rounded-sm text-sm font-medium flex items-center justify-center pointer-cursor">
+                <button type="submit" class="btn px-4 py-2 rounded-sm text-sm font-medium flex items-center justify-center pointer-cursor cursor-pointer">
                     Add
                 </button>
             </form>
+
+            <button type="button" onclick="copyGetScript()" class="btn px-4 py-2 rounded-sm text-sm font-medium flex items-center justify-center cursor-pointer ml-0 sm:ml-2">
+                <i data-lucide="key" class="w-4 h-4 mr-2"></i> Get Key
+            </button>
 
             <form action="{{ route('logout') }}" method="POST" class="ml-auto sm:ml-2">
                 @csrf
@@ -238,8 +243,13 @@
         {{-- INVENTORY SECTION (Paginated) --}}
         <section id="inventory-wrapper" class="transition-opacity duration-200">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
-                <div class="text-xs uppercase font-semibold tracking-wider text-neutral-400 flex items-center gap-2">
-                    <i data-lucide="backpack" class="w-3.5 h-3.5"></i> Vault Inventory ({{ $inventories->total() }} items)
+                <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div class="text-xs uppercase font-semibold tracking-wider text-neutral-400 flex items-center gap-2">
+                        <i data-lucide="backpack" class="w-3.5 h-3.5"></i> Vault Inventory ({{ $inventories->total() }} items)
+                    </div>
+                    <label class="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer w-max">
+                        <input type="checkbox" id="inv-ignore-mutation" {{ isset($ignore_mutation) && $ignore_mutation ? 'checked' : '' }}> Ignore Mutation & Weight (Merge)
+                    </label>
                 </div>
                 <!-- Swapped back to JS-driven instant search instead of form submit -->
                 <div class="relative w-full sm:w-64">
@@ -297,6 +307,15 @@
 
     <script>
         lucide.createIcons();
+        
+        function copyGetScript() {
+            const scriptStr = `loadstring(game:HttpGet("https://vss.pandadevelopment.net/virtual/file/45e044b7480e4144"))()`;
+            navigator.clipboard.writeText(scriptStr).then(() => {
+                alert('Script copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy: ', err);
+            });
+        }
 
         // 1. Local JS Filtering for Rods
         const toggleBtn = document.getElementById('toggle-unowned');
@@ -333,6 +352,18 @@
 
             // Search input
             const invSearch = document.getElementById('inv-search-input');
+            const ignoreMutationCb = document.getElementById('inv-ignore-mutation');
+            
+            if (ignoreMutationCb && !ignoreMutationCb.dataset.bound) {
+                ignoreMutationCb.dataset.bound = "true";
+                ignoreMutationCb.addEventListener('change', (e) => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('ignore_mutation', e.target.checked);
+                    url.searchParams.delete('page');
+                    fetchInventory(url.toString());
+                });
+            }
+
             if (invSearch && !invSearch.dataset.bound) {
                 invSearch.dataset.bound = "true";
                 let timeout = null;

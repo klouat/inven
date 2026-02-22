@@ -33,6 +33,7 @@ class PlayerController extends Controller
 
         // Search inputs
         $searchInv = $request->query('search_inv');
+        $ignore_mutation = $request->query('ignore_mutation') === 'true';
 
         if ($selected_name && in_array($selected_name, $tracked_names)) {
             $player_data = Player::with(['rods'])->where('player_name', $selected_name)->first();
@@ -44,6 +45,14 @@ class PlayerController extends Controller
                     $invQuery->where('name', 'like', '%' . $searchInv . '%');
                 }
                 
+                if ($ignore_mutation) {
+                    $invQuery->select(
+                        'name',
+                        DB::raw('SUM(stack) as stack'),
+                        DB::raw('SUM(weight) as weight')
+                    )->groupBy('name');
+                }
+                
                 $inventories = $invQuery->paginate(30)->withQueryString();
             }
         }
@@ -51,7 +60,7 @@ class PlayerController extends Controller
         // If it's an AJAX request just return the inventory partial (or dashboard and we extract it on JS side)
         // Extracting on JS side is perfectly fine and avoids extra views!
         
-        return view('dashboard', compact('tracked_players', 'player_data', 'selected_name', 'inventories', 'master_rods', 'searchInv'));
+        return view('dashboard', compact('tracked_players', 'player_data', 'selected_name', 'inventories', 'master_rods', 'searchInv', 'ignore_mutation'));
     }
 
     public function track_player(Request $request)

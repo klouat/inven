@@ -37,7 +37,7 @@ return new class extends Migration
             $table->unsignedBigInteger('player_id')->index();
             $table->boolean('sparkling')->default(false);
             $table->string('name');
-            $table->decimal('weight', 8, 2);
+            $table->double('weight');
             $table->boolean('shiny')->default(false);
             $table->integer('stack')->default(1);
             $table->string('mutation')->nullable();
