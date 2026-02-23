@@ -30,6 +30,9 @@ class PlayerController extends Controller
         $player_data = null;
         $inventories = null;
         $master_rods = \App\Models\MasterRod::all()->keyBy('name');
+        $master_fishes = \App\Models\Fish::all()->keyBy('name');
+        $master_mutations = \App\Models\Mutation::all()->keyBy('name');
+        $total_sell_value = 0;
 
         // Search inputs
         $searchInv = $request->query('search_inv');
@@ -39,6 +42,38 @@ class PlayerController extends Controller
             $player_data = Player::with(['rods'])->where('player_name', $selected_name)->first();
             
             if ($player_data) {
+                // Calculate total sell value
+                foreach ($player_data->inventories as $item) {
+                    $fish_master = $master_fishes[$item->name] ?? null;
+                    if ($fish_master) {
+                        $stack_count = max(1, $item->stack ?? 1);
+                        $weight_per_item = $item->weight / $stack_count;
+                        $classification = 'Normal';
+                        
+                        if ($fish_master->max_weight > 0) {
+                            $max_weight_in_kg = $fish_master->max_weight / 10;
+                            $ratio = $weight_per_item / $max_weight_in_kg;
+                            if ($ratio >= 1.99) {
+                                $classification = 'Giant';
+                            } elseif ($ratio > 1.0) {
+                                $classification = 'Big';
+                            }
+                        }
+
+                        $base_price = ceil($fish_master->price_per_kg * $weight_per_item);
+                        $multiplier = 1.0;
+                        if ($item->mutation && isset($master_mutations[$item->mutation])) {
+                            $multiplier *= (float)$master_mutations[$item->mutation]->multiplier;
+                        }
+                        if ($item->shiny) { $multiplier *= 1.85; }
+                        if ($item->sparkling) { $multiplier *= 1.85; }
+                        if ($classification === 'Giant') { $multiplier *= 2.0; }
+
+                        $price_per_item = ceil($base_price * $multiplier);
+                        $total_sell_value += $price_per_item * $stack_count;
+                    }
+                }
+
                 // Inventory with search
                 $invQuery = $player_data->inventories();
                 if ($searchInv) {
@@ -60,7 +95,7 @@ class PlayerController extends Controller
         // If it's an AJAX request just return the inventory partial (or dashboard and we extract it on JS side)
         // Extracting on JS side is perfectly fine and avoids extra views!
         
-        return view('dashboard', compact('tracked_players', 'player_data', 'selected_name', 'inventories', 'master_rods', 'searchInv', 'ignore_mutation'));
+        return view('dashboard', compact('tracked_players', 'player_data', 'selected_name', 'inventories', 'master_rods', 'searchInv', 'ignore_mutation', 'master_fishes', 'master_mutations', 'total_sell_value'));
     }
 
     public function track_player(Request $request)

@@ -161,15 +161,32 @@
         </div>
     @elseif($player_data)
         
-        <div class="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-neutral-200 pb-4">
+        <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-200 pb-6">
             <div>
-                <h2 class="text-2xl font-bold tracking-tight mb-1">{{ $player_data->player_name }}</h2>
+                <h2 class="text-3xl font-bold tracking-tight mb-1 text-neutral-900">{{ $player_data->player_name }}</h2>
                 <div class="flex gap-4 text-sm text-neutral-500">
-                    <span class="flex items-center gap-1.5 font-medium text-neutral-700">
-                        <i data-lucide="coins" class="w-4 h-4 text-neutral-400"></i> {{ number_format($player_data->coins) }}
+                    <span class="flex items-center gap-1.5">
+                        <i data-lucide="clock" class="w-4 h-4 text-neutral-400"></i>
+                        Last Synced: {{ $player_data->updated_at->diffForHumans() }}
                     </span>
-                    <span class="text-neutral-300">|</span>
-                    <span>Last Synced: {{ $player_data->updated_at->diffForHumans() }}</span>
+                </div>
+            </div>
+            
+            <div class="flex flex-row gap-3 sm:gap-4 overflow-x-auto pb-2 md:pb-0">
+                <div class="card p-3 sm:p-4 rounded-xl flex flex-col min-w-[140px] sm:min-w-[170px] border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 shadow-sm relative overflow-hidden">
+                    <i data-lucide="coins" class="absolute -right-2 -bottom-2 w-16 h-16 text-amber-500 opacity-10"></i>
+                    <span class="text-amber-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
+                        <i data-lucide="coins" class="w-4 h-4 text-amber-500"></i> Player Coins
+                    </span>
+                    <span class="text-xl sm:text-2xl font-extrabold text-amber-900 relative z-10">{{ number_format($player_data->coins) }}</span>
+                </div>
+                
+                <div class="card p-3 sm:p-4 rounded-xl flex flex-col min-w-[140px] sm:min-w-[170px] border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 shadow-sm relative overflow-hidden">
+                    <i data-lucide="banknote" class="absolute -right-2 -bottom-2 w-16 h-16 text-green-500 opacity-10"></i>
+                    <span class="text-green-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
+                        <i data-lucide="banknote" class="w-4 h-4 text-green-500"></i> Total Value
+                    </span>
+                    <span class="text-xl sm:text-2xl font-extrabold text-green-900 relative z-10">{{ number_format($total_sell_value) }}</span>
                 </div>
             </div>
         </div>
@@ -281,7 +298,62 @@
                                 {{ number_format($item->weight, 2) }} kg
                             </div>
                             
+                            @php
+                                $fish_master = $master_fishes[$item->name] ?? null;
+                                $classification = 'Normal';
+                                $sell_price = 0;
+                                
+                                $current_weight = $item->weight;
+                                $stack_count = max(1, $item->stack ?? 1);
+                                $weight_per_item = $current_weight / $stack_count;
+
+                                if ($fish_master && $fish_master->max_weight > 0) {
+                                    $max_weight_in_kg = $fish_master->max_weight / 10;
+                                    $ratio = $weight_per_item / $max_weight_in_kg;
+                                    if ($ratio >= 1.99) {
+                                        $classification = 'Giant';
+                                    } elseif ($ratio > 1.0) {
+                                        $classification = 'Big';
+                                    }
+                                }
+
+                                if ($fish_master) {
+                                    $base_price = ceil($fish_master->price_per_kg * $weight_per_item);
+                                    $multiplier = 1.0;
+
+                                    if ($item->mutation && isset($master_mutations[$item->mutation])) {
+                                        $multiplier *= (float)$master_mutations[$item->mutation]->multiplier;
+                                    }
+
+                                    if ($item->shiny) {
+                                        $multiplier *= 1.85;
+                                    }
+
+                                    if ($item->sparkling) {
+                                        $multiplier *= 1.85;
+                                    }
+
+                                    if ($classification === 'Giant') {
+                                        $multiplier *= 2.0;
+                                    }
+
+                                    $price_per_item = ceil($base_price * $multiplier);
+                                    $sell_price = $price_per_item * $stack_count;
+                                }
+                            @endphp
+                            
                             <div class="mt-auto flex gap-1.5 flex-wrap">
+                                @if($sell_price > 0)
+                                    <span class="text-[10px] uppercase font-bold text-green-700 border border-green-300 bg-green-50 px-1.5 py-0.5 rounded-sm flex items-center gap-1">
+                                        <i data-lucide="coins" class="w-3 h-3 text-green-600"></i> {{ number_format($sell_price) }}
+                                    </span>
+                                @endif
+                                @if($classification === 'Giant')
+                                    <span class="text-[10px] uppercase font-bold text-amber-600 border border-amber-300 bg-amber-50 px-1.5 py-0.5 rounded-sm">Giant</span>
+                                @elseif($classification === 'Big')
+                                    <span class="text-[10px] uppercase font-bold text-indigo-600 border border-indigo-300 bg-indigo-50 px-1.5 py-0.5 rounded-sm">Big</span>
+                                @endif
+                                
                                 @if($item->sparkling)
                                     <span class="text-[10px] uppercase font-bold text-neutral-600 border border-neutral-300 bg-white px-1.5 py-0.5 rounded-sm">Sparkling</span>
                                 @endif
