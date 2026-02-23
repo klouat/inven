@@ -30,8 +30,12 @@ class PlayerController extends Controller
         $player_data = null;
         $inventories = null;
         $master_rods = \App\Models\MasterRod::all()->keyBy('name');
-        $master_fishes = \App\Models\Fish::all()->keyBy('name');
-        $master_mutations = \App\Models\Mutation::all()->keyBy('name');
+        $master_fishes = \App\Models\Fish::all()->keyBy(function($fish) {
+            return trim($fish->name);
+        });
+        $master_mutations = \App\Models\Mutation::all()->keyBy(function($mutation) {
+            return trim($mutation->name);
+        });
         $total_sell_value = 0;
 
         // Search inputs
@@ -44,8 +48,7 @@ class PlayerController extends Controller
             if ($player_data) {
                 // Calculate total sell value
                 foreach ($player_data->inventories as $item) {
-                    $clean_name = trim(preg_replace('/[^\w\s\'-]/u', '', $item->name));
-                    $fish_master = $master_fishes[$clean_name] ?? null;
+                    $fish_master = $master_fishes[trim($item->name)] ?? null;
                     if ($fish_master) {
                         $stack_count = max(1, $item->stack ?? 1);
                         $weight_per_item = $item->weight / $stack_count;
