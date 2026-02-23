@@ -299,7 +299,7 @@
                             </div>
                             
                             @php
-                                $clean_name = trim(preg_replace('/[^\x20-\x7E]/u', '', $item->name));
+                                $clean_name = trim(preg_replace('/[^\w\s\'-]/u', '', $item->name));
                                 $fish_master = $master_fishes[$clean_name] ?? null;
                                 $classification = 'Normal';
                                 $sell_price = 0;
