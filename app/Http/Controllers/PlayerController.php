@@ -149,6 +149,7 @@ class PlayerController extends Controller
                 ['player_name' => $json_data['playerName']],
                 ['coins' => $json_data['coins'] ?? 0]
             );
+            $player->touch();
 
             // Re-sync rods logic seamlessly
             $player->rods()->delete();
