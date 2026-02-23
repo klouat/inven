@@ -44,7 +44,8 @@ class PlayerController extends Controller
             if ($player_data) {
                 // Calculate total sell value
                 foreach ($player_data->inventories as $item) {
-                    $fish_master = $master_fishes[$item->name] ?? null;
+                    $clean_name = trim(preg_replace('/[^\x20-\x7E]/u', '', $item->name));
+                    $fish_master = $master_fishes[$clean_name] ?? null;
                     if ($fish_master) {
                         $stack_count = max(1, $item->stack ?? 1);
                         $weight_per_item = $item->weight / $stack_count;
