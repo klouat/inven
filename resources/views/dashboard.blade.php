@@ -59,6 +59,32 @@
         nav[role="navigation"] > div {
             margin-top: 1rem;
         }
+
+        /* Rod Modal */
+        #rod-modal {
+            transition: opacity 0.2s ease;
+        }
+        #rod-modal.hidden {
+            display: none;
+        }
+        #rod-modal-panel {
+            animation: slide-up 0.2s ease;
+        }
+        @keyframes slide-up {
+            from { transform: translateY(12px); opacity: 0; }
+            to   { transform: translateY(0);    opacity: 1; }
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid #f5f5f5;
+            font-size: 0.8125rem;
+        }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: #737373; font-weight: 500; }
+        .stat-value { font-weight: 600; color: #171717; }
     </style>
 </head>
 <body class="p-4 md:p-8 lg:p-12 pb-24 max-w-7xl mx-auto">
@@ -224,10 +250,31 @@
                     
                     {{-- OWNED --}}
                     @foreach($player_data->rods as $rod)
-                    @php 
-                        $master = $master_rods[$rod->name] ?? null; 
+                    @php
+                        $master = $master_rods[$rod->name] ?? null;
+                        $rod_data = $master ? json_encode([
+                            'name'                 => $master->name,
+                            'image_url'            => $master->image_url,
+                            'description'          => $master->description,
+                            'strength'             => $master->strength,
+                            'line_distance'        => $master->line_distance,
+                            'luck'                 => $master->luck,
+                            'lure_speed'           => $master->lure_speed,
+                            'resilience'           => $master->resilience,
+                            'control'              => $master->control,
+                            'level_requirement'    => $master->level_requirement,
+                            'disturbance'          => $master->disturbance,
+                            'mutation_pool'        => $master->mutation_pool,
+                            'preferred_disturbance'=> $master->preferred_disturbance,
+                            'from'                 => $master->from,
+                            'hint'                 => $master->hint,
+                            'owned'                => true,
+                        ]) : '{}';
                     @endphp
-                    <div class="card p-3 flex flex-col items-center gap-3 text-center h-full rod-item" data-name="{{ strtolower($rod->name) }}" data-owned="true">
+                    <div class="card p-3 flex flex-col items-center gap-3 text-center h-full rod-item cursor-pointer hover:border-neutral-400 transition-colors"
+                         data-name="{{ strtolower($rod->name) }}"
+                         data-owned="true"
+                         onclick="openRodModal({{ Js::from(json_decode($rod_data)) }})">
                         <div class="h-16 w-16 bg-neutral-100 flex items-center justify-center p-1 rounded-sm border border-neutral-200">
                             @if($master && $master->image_url)
                                 <img src="{{ $master->image_url }}" alt="{{ $rod->name }}" class="object-contain w-full h-full drop-shadow-sm">
@@ -241,7 +288,30 @@
 
                     {{-- MISSING (Unowned) --}}
                     @foreach($missing_rods as $missing)
-                    <div class="card p-3 flex flex-col items-center gap-3 text-center h-full bg-neutral-50 border-neutral-100 opacity-60 grayscale filter rod-item missing-rod hidden" data-name="{{ strtolower($missing->name) }}" data-owned="false">
+                    @php
+                        $miss_data = json_encode([
+                            'name'                 => $missing->name,
+                            'image_url'            => $missing->image_url,
+                            'description'          => $missing->description,
+                            'strength'             => $missing->strength,
+                            'line_distance'        => $missing->line_distance,
+                            'luck'                 => $missing->luck,
+                            'lure_speed'           => $missing->lure_speed,
+                            'resilience'           => $missing->resilience,
+                            'control'              => $missing->control,
+                            'level_requirement'    => $missing->level_requirement,
+                            'disturbance'          => $missing->disturbance,
+                            'mutation_pool'        => $missing->mutation_pool,
+                            'preferred_disturbance'=> $missing->preferred_disturbance,
+                            'from'                 => $missing->from,
+                            'hint'                 => $missing->hint,
+                            'owned'                => false,
+                        ]);
+                    @endphp
+                    <div class="card p-3 flex flex-col items-center gap-3 text-center h-full bg-neutral-50 border-neutral-100 opacity-60 grayscale filter rod-item missing-rod hidden cursor-pointer hover:opacity-80 transition-opacity"
+                         data-name="{{ strtolower($missing->name) }}"
+                         data-owned="false"
+                         onclick="openRodModal({{ Js::from(json_decode($miss_data)) }})">
                         <div class="h-16 w-16 flex items-center justify-center p-1 rounded-sm border border-neutral-200">
                             @if($missing->image_url)
                                 <img src="{{ $missing->image_url }}" alt="{{ $missing->name }}" class="object-contain w-full h-full">
@@ -269,9 +339,17 @@
                     </label>
                 </div>
                 <!-- Swapped back to JS-driven instant search instead of form submit -->
-                <div class="relative w-full sm:w-64">
-                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"></i>
-                    <input type="text" id="inv-search-input" value="{{ $searchInv }}" placeholder="Search Fish..." class="w-full pl-9 pr-3 py-1.5 text-sm bg-white focus:bg-white rounded-sm border border-neutral-300">
+                <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <select id="inv-rarity-filter" class="pl-3 pr-8 py-1.5 text-sm bg-white rounded-sm border border-neutral-300 cursor-pointer">
+                        <option value="">All Rarities</option>
+                        @foreach($rarity_options as $rarity)
+                            <option value="{{ $rarity }}" {{ $rarity_filter === $rarity ? 'selected' : '' }}>{{ $rarity }}</option>
+                        @endforeach
+                    </select>
+                    <div class="relative w-full sm:w-48">
+                        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"></i>
+                        <input type="text" id="inv-search-input" value="{{ $searchInv }}" placeholder="Search Fish..." class="w-full pl-9 pr-3 py-1.5 text-sm bg-white focus:bg-white rounded-sm border border-neutral-300">
+                    </div>
                 </div>
             </div>
             
@@ -294,9 +372,32 @@
                             </div>
                             
                             <h4 class="font-semibold text-neutral-900 mb-[2px] truncate" title="{{ $item->name }}">{{ $item->name }}</h4>
-                            <div class="text-sm text-neutral-500 flex items-center gap-1.5 font-medium mb-3">
+                            <div class="text-sm text-neutral-500 flex items-center gap-1.5 font-medium mb-1">
                                 {{ number_format($item->weight, 2) }} kg
                             </div>
+                            @if($fish_master && $fish_master->rarity)
+                                @php
+                                    $rarity_colors = [
+                                        'Trash'     => 'bg-stone-100 text-stone-500 border-stone-200',
+                                        'Common'    => 'bg-neutral-100 text-neutral-600 border-neutral-200',
+                                        'Uncommon'  => 'bg-green-50 text-green-700 border-green-200',
+                                        'Unusual'   => 'bg-teal-50 text-teal-700 border-teal-200',
+                                        'Rare'      => 'bg-blue-50 text-blue-700 border-blue-200',
+                                        'Legendary' => 'bg-yellow-50 text-yellow-700 border-yellow-200',
+                                        'Mythical'  => 'bg-purple-50 text-purple-700 border-purple-200',
+                                        'Secret'    => 'bg-red-50 text-red-700 border-red-200',
+                                        'Exotic'    => 'bg-orange-50 text-orange-700 border-orange-200',
+                                        'Limited'   => 'bg-pink-50 text-pink-700 border-pink-200',
+                                        'Extinct'   => 'bg-lime-50 text-lime-700 border-lime-200',
+                                        'Apex'      => 'bg-rose-50 text-rose-700 border-rose-200',
+                                        'Fragment'  => 'bg-cyan-50 text-cyan-700 border-cyan-200',
+                                        'Special'   => 'bg-violet-50 text-violet-700 border-violet-200',
+                                        'Relic'     => 'bg-amber-50 text-amber-700 border-amber-200',
+                                    ];
+                                    $rc = $rarity_colors[$fish_master->rarity] ?? 'bg-neutral-100 text-neutral-500 border-neutral-200';
+                                @endphp
+                                <span class="text-[10px] font-bold uppercase tracking-wide border px-1.5 py-0.5 rounded-sm mb-2 inline-block {{ $rc }}">{{ $fish_master->rarity }}</span>
+                            @endif
                             
                             @php
                                 $fish_master = $master_fishes[trim($item->name)] ?? null;
@@ -377,6 +478,55 @@
 
     @endif
 
+    {{-- Rod Detail Modal --}}
+    <div id="rod-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.45);backdrop-filter:blur(2px)">
+        <div id="rod-modal-panel" class="panel rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+            {{-- Modal Header --}}
+            <div class="flex items-start gap-4 p-5 border-b border-neutral-100">
+                <div class="w-20 h-20 flex-shrink-0 bg-neutral-100 rounded-lg border border-neutral-200 flex items-center justify-center overflow-hidden">
+                    <img id="modal-img" src="" alt="" class="w-full h-full object-contain drop-shadow-sm">
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div id="modal-owned-badge" class="inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-sm mb-1.5"></div>
+                    <h3 id="modal-name" class="text-lg font-bold text-neutral-900 leading-tight"></h3>
+                    <p id="modal-from" class="text-xs text-neutral-500 mt-0.5"></p>
+                </div>
+                <button onclick="closeRodModal()" class="text-neutral-400 hover:text-neutral-700 transition-colors cursor-pointer flex-shrink-0 mt-0.5">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            {{-- Description --}}
+            <div class="px-5 pt-4 pb-2">
+                <p id="modal-description" class="text-sm text-neutral-600 leading-relaxed whitespace-pre-line"></p>
+            </div>
+
+            {{-- Stats --}}
+            <div class="px-5 pb-2">
+                <div class="text-[10px] uppercase font-semibold tracking-wider text-neutral-400 mb-2 mt-3">Stats</div>
+                <div id="modal-stats" class="bg-neutral-50 rounded-lg px-4 py-1 border border-neutral-100"></div>
+            </div>
+
+            {{-- Mutation Pool --}}
+            <div id="modal-mutation-section" class="px-5 pb-2">
+                <div class="text-[10px] uppercase font-semibold tracking-wider text-neutral-400 mb-2 mt-3">Mutation Pool</div>
+                <div id="modal-mutations" class="flex flex-wrap gap-1.5"></div>
+            </div>
+
+            {{-- Preferred Disturbance --}}
+            <div id="modal-disturbance-section" class="px-5 pb-2 hidden">
+                <div class="text-[10px] uppercase font-semibold tracking-wider text-neutral-400 mb-2 mt-3">Preferred Disturbance</div>
+                <div id="modal-disturbance" class="text-sm text-neutral-700"></div>
+            </div>
+
+            {{-- Hint --}}
+            <div class="px-5 pt-2 pb-5">
+                <div class="text-[10px] uppercase font-semibold tracking-wider text-neutral-400 mb-1.5 mt-1">Hint</div>
+                <p id="modal-hint" class="text-sm text-neutral-500 italic"></p>
+            </div>
+        </div>
+    </div>
+
     <script>
         lucide.createIcons();
         
@@ -436,6 +586,21 @@
                 });
             }
 
+            const raritySelect = document.getElementById('inv-rarity-filter');
+            if (raritySelect && !raritySelect.dataset.bound) {
+                raritySelect.dataset.bound = "true";
+                raritySelect.addEventListener('change', (e) => {
+                    const url = new URL(window.location.href);
+                    if (e.target.value) {
+                        url.searchParams.set('rarity_filter', e.target.value);
+                    } else {
+                        url.searchParams.delete('rarity_filter');
+                    }
+                    url.searchParams.delete('page');
+                    fetchInventory(url.toString());
+                });
+            }
+
             if (invSearch && !invSearch.dataset.bound) {
                 invSearch.dataset.bound = "true";
                 let timeout = null;
@@ -488,6 +653,83 @@
 
         // Initial bind
         attachInventoryListeners();
+
+        // --- Rod Modal ---
+        function openRodModal(rod) {
+            const modal = document.getElementById('rod-modal');
+
+            document.getElementById('modal-img').src         = rod.image_url || '';
+            document.getElementById('modal-img').alt         = rod.name;
+            document.getElementById('modal-name').textContent = rod.name;
+            document.getElementById('modal-from').textContent = rod.from ? '📍 ' + rod.from : '';
+            document.getElementById('modal-description').textContent = rod.description || 'No description.';
+            document.getElementById('modal-hint').textContent = rod.hint || 'N/A';
+
+            // Owned badge
+            const badge = document.getElementById('modal-owned-badge');
+            if (rod.owned) {
+                badge.textContent = '✓ Owned';
+                badge.className = 'inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-sm mb-1.5 bg-green-100 text-green-700 border border-green-200';
+            } else {
+                badge.textContent = '✕ Not Owned';
+                badge.className = 'inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-sm mb-1.5 bg-neutral-100 text-neutral-500 border border-neutral-200';
+            }
+
+            // Stats
+            const stats = [
+                { label: 'Strength',          value: rod.strength ?? '—' },
+                { label: 'Line Distance',     value: rod.line_distance ?? '—' },
+                { label: 'Luck',              value: rod.luck ?? 0 },
+                { label: 'Lure Speed',        value: rod.lure_speed ?? 0 },
+                { label: 'Resilience',        value: rod.resilience ?? 0 },
+                { label: 'Control',           value: rod.control ?? 0 },
+                { label: 'Level Requirement', value: rod.level_requirement ?? 0 },
+                { label: 'Disturbance',       value: rod.disturbance ?? '—' },
+            ];
+            document.getElementById('modal-stats').innerHTML = stats.map(s =>
+                `<div class="stat-row"><span class="stat-label">${s.label}</span><span class="stat-value">${s.value}</span></div>`
+            ).join('');
+
+            // Mutation pool
+            const mutSection = document.getElementById('modal-mutation-section');
+            const mutContainer = document.getElementById('modal-mutations');
+            const pool = rod.mutation_pool;
+            if (pool && typeof pool === 'object' && Object.keys(pool).length > 0) {
+                mutSection.classList.remove('hidden');
+                mutContainer.innerHTML = Object.entries(pool).map(([name, chance]) =>
+                    `<span class="text-[11px] font-semibold border border-neutral-200 bg-white px-2 py-0.5 rounded-sm text-neutral-700">${name} <span class="text-neutral-400">${chance}%</span></span>`
+                ).join('');
+            } else {
+                mutSection.classList.add('hidden');
+            }
+
+            // Preferred disturbance
+            const distSection = document.getElementById('modal-disturbance-section');
+            const distEl = document.getElementById('modal-disturbance');
+            if (rod.preferred_disturbance && rod.preferred_disturbance.Event) {
+                distSection.classList.remove('hidden');
+                distEl.textContent = rod.preferred_disturbance.Event + ' (Risk: ' + (rod.preferred_disturbance.Risk ?? '?') + ')';
+            } else {
+                distSection.classList.add('hidden');
+            }
+
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeRodModal() {
+            document.getElementById('rod-modal').classList.add('hidden');
+        }
+
+        // Close on backdrop click
+        document.getElementById('rod-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeRodModal();
+        });
+
+        // Close on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeRodModal();
+        });
     </script>
 </body>
 </html>

@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             FishSeeder::class,
             MutationSeeder::class,
+            MasterRodSeeder::class,
         ]);
     }
 }

@@ -2,49 +2,61 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class MasterRodSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        $json_path = 'd:\roblox\fisch\fish_images.json';
+        $json_path = base_path('../output_with_images.json');
+
         if (!file_exists($json_path)) {
-            $this->command->error('fish_images.json not found!');
+            $this->command->error("output_with_images.json not found at: {$json_path}");
             return;
         }
 
-        $json_data = json_decode(file_get_contents($json_path), true);
-        
-        $insertData = [];
-        $unique_names = []; // Keep track of unique names to avoid dupes in insert array
-        
-        foreach ($json_data as $item) {
-            $name = $item['Name'] ?? null;
-            if (!$name || in_array($name, $unique_names)) continue;
-            
-            $unique_names[] = $name;
-            $insertData[] = [
-                'name' => $name,
-                'icon' => $item['Icon'] ?? '',
-                'image_url' => $item['imageUrl'] ?? null,
-                'created_at' => now(),
-                'updated_at' => now(),
+        $raw = json_decode(file_get_contents($json_path), true);
+
+        if (!$raw) {
+            $this->command->error('Failed to parse output_with_images.json');
+            return;
+        }
+
+        $insert_data = [];
+
+        foreach ($raw as $rod_name => $data) {
+            // Normalize Strength & LineDistance — can be "inf" strings or numbers
+            $strength      = $data['Strength'] ?? 0;
+            $line_distance = $data['LineDistance'] ?? 0;
+
+            $insert_data[] = [
+                'name'                  => $rod_name,
+                'icon'                  => $data['Icon'] ?? '',
+                'image_url'             => $data['image_url'] ?? null,
+                'description'           => $data['Description'] ?? null,
+                'hint'                  => $data['Hint'] ?? null,
+                'from'                  => $data['From'] ?? null,
+                'strength'              => (string) $strength,
+                'line_distance'         => (string) $line_distance,
+                'luck'                  => (float) ($data['Luck'] ?? 0),
+                'lure_speed'            => (float) ($data['LureSpeed'] ?? 0),
+                'resilience'            => (float) ($data['Resilience'] ?? 0),
+                'control'               => (float) ($data['Control'] ?? 0),
+                'level_requirement'     => (int) ($data['LevelRequirement'] ?? 0),
+                'disturbance'           => isset($data['Disturbance']) ? (int) $data['Disturbance'] : null,
+                'mutation_pool'         => isset($data['MutationPool']) ? json_encode($data['MutationPool']) : null,
+                'preferred_disturbance' => isset($data['PreferredDisturbance']) ? json_encode($data['PreferredDisturbance']) : null,
+                'created_at'            => now(),
+                'updated_at'            => now(),
             ];
         }
 
         \App\Models\MasterRod::truncate();
-        
-        // Chunk inserts to handle large amounts arrays gracefully
-        $chunks = array_chunk($insertData, 500);
-        foreach ($chunks as $chunk) {
+
+        foreach (array_chunk($insert_data, 200) as $chunk) {
             \App\Models\MasterRod::insert($chunk);
         }
 
-        $this->command->info(count($insertData) . ' master rods successfully seeded.');
+        $this->command->info(count($insert_data) . ' rods seeded from output_with_images.json.');
     }
 }

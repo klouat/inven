@@ -11,6 +11,9 @@ class Fish extends Model
     protected $fillable = [
         'name',
         'price_per_kg',
-        'max_weight'
+        'max_weight',
+        'rarity',
+        'icon',
+        'from',
     ];
 }

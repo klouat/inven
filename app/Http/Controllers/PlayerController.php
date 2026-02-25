@@ -39,8 +39,15 @@ class PlayerController extends Controller
         $total_sell_value = 0;
 
         // Search inputs
-        $searchInv = $request->query('search_inv');
+        $searchInv      = $request->query('search_inv');
         $ignore_mutation = $request->query('ignore_mutation') === 'true';
+        $rarity_filter  = $request->query('rarity_filter', '');
+
+        // All distinct rarities for the dropdown
+        $rarity_options = \App\Models\Fish::whereNotNull('rarity')
+            ->distinct()
+            ->orderBy('rarity')
+            ->pluck('rarity');
 
         if ($selected_name && in_array($selected_name, $tracked_names)) {
             $player_data = Player::with(['rods'])->where('player_name', $selected_name)->first();
@@ -78,20 +85,26 @@ class PlayerController extends Controller
                     }
                 }
 
-                // Inventory with search
+                // Inventory with search + rarity filter
                 $invQuery = $player_data->inventories();
                 if ($searchInv) {
-                    $invQuery->where('name', 'like', '%' . $searchInv . '%');
+                    $invQuery->where('player_inventories.name', 'like', '%' . $searchInv . '%');
                 }
-                
+
+                if ($rarity_filter) {
+                    $invQuery->join('fishes', 'player_inventories.name', '=', 'fishes.name')
+                             ->where('fishes.rarity', $rarity_filter)
+                             ->select('player_inventories.*');
+                }
+
                 if ($ignore_mutation) {
                     $invQuery->select(
-                        'name',
-                        DB::raw('SUM(stack) as stack'),
-                        DB::raw('SUM(weight) as weight')
-                    )->groupBy('name');
+                        'player_inventories.name',
+                        DB::raw('SUM(player_inventories.stack) as stack'),
+                        DB::raw('SUM(player_inventories.weight) as weight')
+                    )->groupBy('player_inventories.name');
                 }
-                
+
                 $inventories = $invQuery->paginate(30)->withQueryString();
             }
         }
@@ -99,7 +112,12 @@ class PlayerController extends Controller
         // If it's an AJAX request just return the inventory partial (or dashboard and we extract it on JS side)
         // Extracting on JS side is perfectly fine and avoids extra views!
         
-        return view('dashboard', compact('tracked_players', 'player_data', 'selected_name', 'inventories', 'master_rods', 'searchInv', 'ignore_mutation', 'master_fishes', 'master_mutations', 'total_sell_value'));
+        return view('dashboard', compact(
+            'tracked_players', 'player_data', 'selected_name',
+            'inventories', 'master_rods', 'searchInv',
+            'ignore_mutation', 'master_fishes', 'master_mutations',
+            'total_sell_value', 'rarity_filter', 'rarity_options'
+        ));
     }
 
     public function track_player(Request $request)
