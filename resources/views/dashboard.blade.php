@@ -375,35 +375,34 @@
                             <div class="text-sm text-neutral-500 flex items-center gap-1.5 font-medium mb-1">
                                 {{ number_format($item->weight, 2) }} kg
                             </div>
-                            @if($fish_master && $fish_master->rarity)
-                                @php
-                                    $rarity_colors = [
-                                        'Trash'     => 'bg-stone-100 text-stone-500 border-stone-200',
-                                        'Common'    => 'bg-neutral-100 text-neutral-600 border-neutral-200',
-                                        'Uncommon'  => 'bg-green-50 text-green-700 border-green-200',
-                                        'Unusual'   => 'bg-teal-50 text-teal-700 border-teal-200',
-                                        'Rare'      => 'bg-blue-50 text-blue-700 border-blue-200',
-                                        'Legendary' => 'bg-yellow-50 text-yellow-700 border-yellow-200',
-                                        'Mythical'  => 'bg-purple-50 text-purple-700 border-purple-200',
-                                        'Secret'    => 'bg-red-50 text-red-700 border-red-200',
-                                        'Exotic'    => 'bg-orange-50 text-orange-700 border-orange-200',
-                                        'Limited'   => 'bg-pink-50 text-pink-700 border-pink-200',
-                                        'Extinct'   => 'bg-lime-50 text-lime-700 border-lime-200',
-                                        'Apex'      => 'bg-rose-50 text-rose-700 border-rose-200',
-                                        'Fragment'  => 'bg-cyan-50 text-cyan-700 border-cyan-200',
-                                        'Special'   => 'bg-violet-50 text-violet-700 border-violet-200',
-                                        'Relic'     => 'bg-amber-50 text-amber-700 border-amber-200',
-                                    ];
-                                    $rc = $rarity_colors[$fish_master->rarity] ?? 'bg-neutral-100 text-neutral-500 border-neutral-200';
-                                @endphp
-                                <span class="text-[10px] font-bold uppercase tracking-wide border px-1.5 py-0.5 rounded-sm mb-2 inline-block {{ $rc }}">{{ $fish_master->rarity }}</span>
-                            @endif
-                            
+
                             @php
                                 $fish_master = $master_fishes[trim($item->name)] ?? null;
                                 $classification = 'Normal';
                                 $sell_price = 0;
-                                
+                                $rc = 'bg-neutral-100 text-neutral-500 border-neutral-200';
+
+                                $rarity_colors = [
+                                    'Trash'     => 'bg-stone-100 text-stone-500 border-stone-200',
+                                    'Common'    => 'bg-neutral-100 text-neutral-600 border-neutral-200',
+                                    'Uncommon'  => 'bg-green-50 text-green-700 border-green-200',
+                                    'Unusual'   => 'bg-teal-50 text-teal-700 border-teal-200',
+                                    'Rare'      => 'bg-blue-50 text-blue-700 border-blue-200',
+                                    'Legendary' => 'bg-yellow-50 text-yellow-700 border-yellow-200',
+                                    'Mythical'  => 'bg-purple-50 text-purple-700 border-purple-200',
+                                    'Secret'    => 'bg-red-50 text-red-700 border-red-200',
+                                    'Exotic'    => 'bg-orange-50 text-orange-700 border-orange-200',
+                                    'Limited'   => 'bg-pink-50 text-pink-700 border-pink-200',
+                                    'Extinct'   => 'bg-lime-50 text-lime-700 border-lime-200',
+                                    'Apex'      => 'bg-rose-50 text-rose-700 border-rose-200',
+                                    'Fragment'  => 'bg-cyan-50 text-cyan-700 border-cyan-200',
+                                    'Special'   => 'bg-violet-50 text-violet-700 border-violet-200',
+                                    'Relic'     => 'bg-amber-50 text-amber-700 border-amber-200',
+                                ];
+                                if ($fish_master) {
+                                    $rc = $rarity_colors[$fish_master->rarity] ?? $rc;
+                                }
+
                                 $current_weight = $item->weight;
                                 $stack_count = max(1, $item->stack ?? 1);
                                 $weight_per_item = $current_weight / $stack_count;
@@ -444,6 +443,9 @@
                             @endphp
                             
                             <div class="mt-auto flex gap-1.5 flex-wrap">
+                                @if($fish_master && $fish_master->rarity)
+                                    <span class="text-[10px] font-bold uppercase tracking-wide border px-1.5 py-0.5 rounded-sm {{ $rc }}">{{ $fish_master->rarity }}</span>
+                                @endif
                                 @if($sell_price > 0)
                                     <span class="text-[10px] uppercase font-bold text-green-700 border border-green-300 bg-green-50 px-1.5 py-0.5 rounded-sm flex items-center gap-1">
                                         <i data-lucide="coins" class="w-3 h-3 text-green-600"></i> {{ number_format($sell_price) }}
