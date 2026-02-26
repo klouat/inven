@@ -78,7 +78,9 @@ class PlayerController extends Controller
                         }
                         if ($item->shiny) { $multiplier *= 1.85; }
                         if ($item->sparkling) { $multiplier *= 1.85; }
+                        if ($classification === 'Big') { $multiplier *= 1.5; }
                         if ($classification === 'Giant') { $multiplier *= 2.0; }
+                        
 
                         $price_per_item = ceil($base_price * $multiplier);
                         $total_sell_value += $price_per_item * $stack_count;
