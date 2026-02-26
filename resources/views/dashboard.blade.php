@@ -614,7 +614,7 @@
                         url.searchParams.set('search_inv', val);
                         url.searchParams.delete('page'); // Reset to page 1 on search
                         fetchInventory(url.toString());
-                    }, 300); // 300ms debounce
+                    }, 500); // 500ms debounce
                 });
             }
 
@@ -628,12 +628,20 @@
             });
         }
 
+        let currentFetchController = null;
+
         async function fetchInventory(url) {
             const inventoryWrapper = document.getElementById('inventory-wrapper');
             inventoryWrapper.style.opacity = '0.5';
             
+            if (currentFetchController) {
+                currentFetchController.abort();
+            }
+            currentFetchController = new AbortController();
+            const signal = currentFetchController.signal;
+            
             try {
-                const response = await fetch(url);
+                const response = await fetch(url, { signal });
                 const html = await response.text();
                 
                 const parser = new DOMParser();
@@ -647,9 +655,13 @@
                     window.history.pushState({}, '', url); // Update URL dynamically
                 }
             } catch (err) {
-                console.error("Failed to fetch inventory", err);
+                if (err.name !== 'AbortError') {
+                    console.error("Failed to fetch inventory", err);
+                }
             } finally {
-                inventoryWrapper.style.opacity = '1';
+                if (!signal.aborted) {
+                    inventoryWrapper.style.opacity = '1';
+                }
             }
         }
 

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Exception;
 
 class PlayerController extends Controller
@@ -29,13 +30,6 @@ class PlayerController extends Controller
 
         $player_data = null;
         $inventories = null;
-        $master_rods = \App\Models\MasterRod::all()->keyBy('name');
-        $master_fishes = \App\Models\Fish::all()->keyBy(function($fish) {
-            return trim($fish->name);
-        });
-        $master_mutations = \App\Models\Mutation::all()->keyBy(function($mutation) {
-            return trim($mutation->name);
-        });
         $total_sell_value = 0;
 
         // Search inputs
@@ -43,18 +37,42 @@ class PlayerController extends Controller
         $ignore_mutation = $request->query('ignore_mutation') === 'true';
         $rarity_filter  = $request->query('rarity_filter', '');
 
+        // Cache Master Data
+        $master_rods = Cache::remember('master_rods', 86400, function () {
+            return \App\Models\MasterRod::all()->keyBy('name');
+        });
+        
+        $master_fishes = Cache::remember('master_fishes', 86400, function () {
+            return \App\Models\Fish::all()->keyBy(function($fish) {
+                return trim($fish->name);
+            });
+        });
+        
+        $master_mutations = Cache::remember('master_mutations', 86400, function () {
+            return \App\Models\Mutation::all()->keyBy(function($mutation) {
+                return trim($mutation->name);
+            });
+        });
+
         // All distinct rarities for the dropdown
-        $rarity_options = \App\Models\Fish::whereNotNull('rarity')
-            ->distinct()
-            ->orderBy('rarity')
-            ->pluck('rarity');
+        $rarity_options = Cache::remember('rarity_options', 86400, function () {
+            return \App\Models\Fish::whereNotNull('rarity')
+                ->distinct()
+                ->orderBy('rarity')
+                ->pluck('rarity');
+        });
 
         if ($selected_name && in_array($selected_name, $tracked_names)) {
             $player_data = Player::with(['rods'])->where('player_name', $selected_name)->first();
             
             if ($player_data) {
-                // Calculate total sell value
-                foreach ($player_data->inventories as $item) {
+                // Calculate total sell value using a light query instead of full models
+                $inventory_items = DB::table('player_inventories')
+                    ->where('player_id', $player_data->id)
+                    ->select('name', 'weight', 'stack', 'mutation', 'shiny', 'sparkling')
+                    ->cursor();
+
+                foreach ($inventory_items as $item) {
                     $fish_master = $master_fishes[trim($item->name)] ?? null;
                     if ($fish_master) {
                         $stack_count = max(1, $item->stack ?? 1);
@@ -80,7 +98,6 @@ class PlayerController extends Controller
                         if ($item->sparkling) { $multiplier *= 1.85; }
                         if ($classification === 'Big') { $multiplier *= 1.5; }
                         if ($classification === 'Giant') { $multiplier *= 2.0; }
-                        
 
                         $price_per_item = ceil($base_price * $multiplier);
                         $total_sell_value += $price_per_item * $stack_count;
@@ -148,8 +165,6 @@ class PlayerController extends Controller
         return back()->with('success', 'Untracked player: ' . $name);
     }
 
-
-
     public function upload_data_api(Request $request)
     {
         try {
@@ -173,40 +188,46 @@ class PlayerController extends Controller
 
             // Re-sync rods logic seamlessly
             $player->rods()->delete();
-            $rods_data = [];
             
-            if (isset($json_data['rods'])) {
-                foreach ($json_data['rods'] as $rod) {
-                    $rods_data[] = [
-                        'player_id' => $player->id,
-                        'name' => $rod['Name'],
-                        'icon' => $rod['Icon'],
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+            if (!empty($json_data['rods'])) {
+                $rods_chunks = array_chunk($json_data['rods'], 500);
+                foreach ($rods_chunks as $chunk) {
+                    $rods_data = [];
+                    foreach ($chunk as $rod) {
+                        $rods_data[] = [
+                            'player_id' => $player->id,
+                            'name' => $rod['Name'],
+                            'icon' => $rod['Icon'],
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                    }
+                    PlayerRod::insert($rods_data);
                 }
-                PlayerRod::insert($rods_data);
             }
 
             // Batched inventory insertion for optimization
             $player->inventories()->delete();
-            $inventory_data = [];
             
-            if (isset($json_data['inventory'])) {
-                foreach ($json_data['inventory'] as $item) {
-                    $inventory_data[] = [
-                        'player_id' => $player->id,
-                        'sparkling' => $item['sparkling'] ?? false,
-                        'name' => $item['name'],
-                        'weight' => $item['weight'] ?? 0,
-                        'shiny' => $item['shiny'] ?? false,
-                        'stack' => $item['stack'] ?? 1,
-                        'mutation' => $item['mutation'] ?? null,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+            if (!empty($json_data['inventory'])) {
+                $inventory_chunks = array_chunk($json_data['inventory'], 500);
+                foreach ($inventory_chunks as $chunk) {
+                    $inventory_data = [];
+                    foreach ($chunk as $item) {
+                        $inventory_data[] = [
+                            'player_id' => $player->id,
+                            'sparkling' => $item['sparkling'] ?? false,
+                            'name' => $item['name'],
+                            'weight' => $item['weight'] ?? 0,
+                            'shiny' => $item['shiny'] ?? false,
+                            'stack' => $item['stack'] ?? 1,
+                            'mutation' => $item['mutation'] ?? null,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                    }
+                    PlayerInventory::insert($inventory_data);
                 }
-                PlayerInventory::insert($inventory_data);
             }
 
             DB::commit();
