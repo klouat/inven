@@ -58,7 +58,7 @@ class PlayerController extends Controller
                     $fish_master = $master_fishes[trim($item->name)] ?? null;
                     if ($fish_master) {
                         $stack_count = max(1, $item->stack ?? 1);
-                        $weight_per_item = $item->weight / $stack_count;
+                        $weight_per_item = $item->weight;
                         $classification = 'Normal';
                         
                         if ($fish_master->max_weight > 0) {
