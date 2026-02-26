@@ -37,30 +37,22 @@ class PlayerController extends Controller
         $ignore_mutation = $request->query('ignore_mutation') === 'true';
         $rarity_filter  = $request->query('rarity_filter', '');
 
-        // Cache Master Data
-        $master_rods = Cache::remember('master_rods', 86400, function () {
-            return \App\Models\MasterRod::all()->keyBy('name');
+        // Fetch Master Data directly (Cache exceeds cPanel memcached/packet limits)
+        $master_rods = \App\Models\MasterRod::all()->keyBy('name');
+        
+        $master_fishes = \App\Models\Fish::all()->keyBy(function($fish) {
+            return trim($fish->name);
         });
         
-        $master_fishes = Cache::remember('master_fishes', 86400, function () {
-            return \App\Models\Fish::all()->keyBy(function($fish) {
-                return trim($fish->name);
-            });
-        });
-        
-        $master_mutations = Cache::remember('master_mutations', 86400, function () {
-            return \App\Models\Mutation::all()->keyBy(function($mutation) {
-                return trim($mutation->name);
-            });
+        $master_mutations = \App\Models\Mutation::all()->keyBy(function($mutation) {
+            return trim($mutation->name);
         });
 
         // All distinct rarities for the dropdown
-        $rarity_options = Cache::remember('rarity_options', 86400, function () {
-            return \App\Models\Fish::whereNotNull('rarity')
-                ->distinct()
-                ->orderBy('rarity')
-                ->pluck('rarity');
-        });
+        $rarity_options = \App\Models\Fish::whereNotNull('rarity')
+            ->distinct()
+            ->orderBy('rarity')
+            ->pluck('rarity');
 
         if ($selected_name && in_array($selected_name, $tracked_names)) {
             $player_data = Player::with(['rods'])->where('player_name', $selected_name)->first();
