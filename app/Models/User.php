@@ -21,6 +21,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'rarity_value_filters',
     ];
 
     /**
@@ -43,6 +44,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'rarity_value_filters' => 'array',
         ];
     }
 

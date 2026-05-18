@@ -85,6 +85,9 @@
         .stat-row:last-child { border-bottom: none; }
         .stat-label { color: #737373; font-weight: 500; }
         .stat-value { font-weight: 600; color: #171717; }
+        .multi-select-menu.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8 lg:p-12 pb-24 max-w-7xl mx-auto">
@@ -209,10 +212,18 @@
                 
                 <div class="card p-3 sm:p-4 rounded-xl flex flex-col min-w-[140px] sm:min-w-[170px] border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 shadow-sm relative overflow-hidden">
                     <i data-lucide="banknote" class="absolute -right-2 -bottom-2 w-16 h-16 text-green-500 opacity-10"></i>
-                    <span class="text-green-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
-                        <i data-lucide="banknote" class="w-4 h-4 text-green-500"></i> Total Value
+                    <span id="selected-value-label" class="text-green-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
+                        <i data-lucide="banknote" class="w-4 h-4 text-green-500"></i> Selected {{ $active_view === 'storage' ? 'Storage' : 'Inventory' }} Value
                     </span>
-                    <span class="text-xl sm:text-2xl font-extrabold text-green-900 relative z-10">{{ number_format($total_sell_value) }}</span>
+                    <span id="selected-value-amount" class="text-xl sm:text-2xl font-extrabold text-green-900 relative z-10">{{ number_format($active_view === 'storage' ? $selected_storage_rarity_total_value : $selected_rarity_total_value) }}</span>
+                </div>
+
+                <div class="card p-3 sm:p-4 rounded-xl flex flex-col min-w-[140px] sm:min-w-[170px] border-cyan-200 bg-gradient-to-br from-cyan-50 to-sky-50 shadow-sm relative overflow-hidden">
+                    <i data-lucide="archive" class="absolute -right-2 -bottom-2 w-16 h-16 text-cyan-500 opacity-10"></i>
+                    <span class="text-cyan-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
+                        <i data-lucide="archive" class="w-4 h-4 text-cyan-500"></i> Storage Value
+                    </span>
+                    <span class="text-xl sm:text-2xl font-extrabold text-cyan-900 relative z-10">{{ number_format($total_storage_value) }}</span>
                 </div>
             </div>
         </div>
@@ -327,18 +338,31 @@
             @endif
         </section>
 
-        {{-- INVENTORY SECTION (Paginated) --}}
-        <section id="inventory-wrapper" class="transition-opacity duration-200">
+        <div class="flex flex-wrap gap-2 mb-6">
+            <a href="{{ route('home', array_merge(request()->query(), ['view' => 'inventory', 'page' => null, 'storage_page' => null])) }}"
+               class="px-4 py-2 text-sm font-semibold rounded-sm border {{ $active_view === 'inventory' ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-300 hover:border-neutral-400' }}">
+                Inventory
+            </a>
+            <a href="{{ route('home', array_merge(request()->query(), ['view' => 'storage', 'page' => null, 'storage_page' => null])) }}"
+               class="px-4 py-2 text-sm font-semibold rounded-sm border {{ $active_view === 'storage' ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-300 hover:border-neutral-400' }}">
+                Storage
+            </a>
+        </div>
+
+        <section id="collection-wrapper" class="transition-opacity duration-200">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
                 <div class="flex flex-col sm:flex-row sm:items-center gap-4">
                     <div class="text-xs uppercase font-semibold tracking-wider text-neutral-400 flex items-center gap-2">
-                        <i data-lucide="backpack" class="w-3.5 h-3.5"></i> Vault Inventory ({{ $inventories->total() }} items)
+                        @if($active_view === 'storage')
+                            <i data-lucide="archive" class="w-3.5 h-3.5"></i> Item Storage ({{ $storages?->total() ?? 0 }} items)
+                        @else
+                            <i data-lucide="backpack" class="w-3.5 h-3.5"></i> Vault Inventory ({{ $inventories?->total() ?? 0 }} items)
+                        @endif
                     </div>
                     <label class="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer w-max">
                         <input type="checkbox" id="inv-ignore-mutation" {{ isset($ignore_mutation) && $ignore_mutation ? 'checked' : '' }}> Ignore Mutation & Weight (Merge)
                     </label>
                 </div>
-                <!-- Swapped back to JS-driven instant search instead of form submit -->
                 <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     <select id="inv-rarity-filter" class="pl-3 pr-8 py-1.5 text-sm bg-white rounded-sm border border-neutral-300 cursor-pointer">
                         <option value="">All Rarities</option>
@@ -346,15 +370,190 @@
                             <option value="{{ $rarity }}" {{ $rarity_filter === $rarity ? 'selected' : '' }}>{{ $rarity }}</option>
                         @endforeach
                     </select>
+                    <div class="relative w-full sm:w-56">
+                        <button
+                            type="button"
+                            id="inv-rarity-value-trigger"
+                            class="w-full pl-3 pr-10 py-1.5 text-sm bg-white rounded-sm border border-neutral-300 text-left flex items-center justify-between"
+                            aria-haspopup="true"
+                            aria-expanded="false"
+                        >
+                            <span id="inv-rarity-value-label">
+                                @if(count($rarity_value_filters ?? []) === count($rarity_options ?? []))
+                                    All Value Rarities
+                                @elseif(!empty($rarity_value_filters))
+                                    {{ count($rarity_value_filters) }} selected
+                                @else
+                                    Value Rarities
+                                @endif
+                            </span>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-neutral-400"></i>
+                        </button>
+                        <div id="inv-rarity-value-menu" class="multi-select-menu hidden absolute z-20 mt-1 w-full bg-white border border-neutral-200 rounded-sm shadow-lg p-1 max-h-64 overflow-y-auto">
+                            <div class="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-neutral-100 mb-1">
+                                <button type="button" id="inv-rarity-check-all" class="text-xs font-semibold text-green-700 hover:text-green-800">
+                                    Check all
+                                </button>
+                                <button type="button" id="inv-rarity-uncheck-all" class="text-xs font-semibold text-neutral-500 hover:text-neutral-700">
+                                    Uncheck all
+                                </button>
+                            </div>
+                            @foreach($rarity_options as $rarity)
+                                <label class="flex items-center justify-between gap-3 px-2 py-1.5 rounded-sm hover:bg-neutral-50 cursor-pointer text-sm text-neutral-700">
+                                    <span>{{ $rarity }}</span>
+                                    <span class="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            class="inv-rarity-value-checkbox"
+                                            value="{{ $rarity }}"
+                                            {{ in_array($rarity, $rarity_value_filters ?? [], true) ? 'checked' : '' }}
+                                        >
+                                        <i data-lucide="check" class="w-4 h-4 text-green-600 {{ in_array($rarity, $rarity_value_filters ?? [], true) ? '' : 'hidden' }}"></i>
+                                    </span>
+                                </label>
+                            @endforeach
+                        </div>
+                    </div>
                     <div class="relative w-full sm:w-48">
                         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"></i>
-                        <input type="text" id="inv-search-input" value="{{ $searchInv }}" placeholder="Search Fish..." class="w-full pl-9 pr-3 py-1.5 text-sm bg-white focus:bg-white rounded-sm border border-neutral-300">
+                        <input type="text" id="inv-search-input" value="{{ $searchItem }}" placeholder="Search {{ $active_view === 'storage' ? 'Storage' : 'Fish' }}..." class="w-full pl-9 pr-3 py-1.5 text-sm bg-white focus:bg-white rounded-sm border border-neutral-300">
                     </div>
                 </div>
             </div>
             
-            @if($inventories->isEmpty())
-                <div class="text-sm text-neutral-500 italic panel p-6 text-center">Backpack is empty or no match found for '{{ $searchInv }}'.</div>
+            @if($active_view === 'storage')
+                @if(!$storages || $storages->isEmpty())
+                    <div class="text-sm text-neutral-500 italic panel p-6 text-center">Storage is empty or no match found for '{{ $searchItem }}'.</div>
+                @else
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        @foreach($storages as $item)
+                            <div class="card p-4 flex flex-col h-full group">
+                                <div class="flex justify-between items-start mb-3">
+                                    <div class="bg-neutral-100 text-neutral-500 w-10 h-10 flex items-center justify-center transition-colors group-hover:bg-neutral-800 group-hover:text-white rounded-sm">
+                                        <i data-lucide="archive" class="w-5 h-5"></i>
+                                    </div>
+                                    @if($item->stack > 1)
+                                        <div class="badge px-2 py-0.5 text-xs font-semibold rounded-sm">
+                                            x{{ $item->stack }}
+                                        </div>
+                                    @endif
+                                </div>
+
+                                <h4 class="font-semibold text-neutral-900 mb-[2px] truncate" title="{{ $item->name }}">{{ $item->name }}</h4>
+                                <div class="text-sm text-neutral-500 flex items-center gap-1.5 font-medium mb-1">
+                                    {{ number_format($item->weight, 2) }} kg
+                                </div>
+
+                                @php
+                                    $fish_master = $master_fishes[trim($item->name)] ?? null;
+                                    $classification = 'Normal';
+                                    $sell_price = 0;
+                                    $price_per_item = 0;
+                                    $rc = 'bg-neutral-100 text-neutral-500 border-neutral-200';
+
+                                    $rarity_colors = [
+                                        'Trash'     => 'bg-stone-100 text-stone-500 border-stone-200',
+                                        'Common'    => 'bg-neutral-100 text-neutral-600 border-neutral-200',
+                                        'Uncommon'  => 'bg-green-50 text-green-700 border-green-200',
+                                        'Unusual'   => 'bg-teal-50 text-teal-700 border-teal-200',
+                                        'Rare'      => 'bg-blue-50 text-blue-700 border-blue-200',
+                                        'Legendary' => 'bg-yellow-50 text-yellow-700 border-yellow-200',
+                                        'Mythical'  => 'bg-purple-50 text-purple-700 border-purple-200',
+                                        'Secret'    => 'bg-red-50 text-red-700 border-red-200',
+                                        'Exotic'    => 'bg-orange-50 text-orange-700 border-orange-200',
+                                        'Limited'   => 'bg-pink-50 text-pink-700 border-pink-200',
+                                        'Extinct'   => 'bg-lime-50 text-lime-700 border-lime-200',
+                                        'Apex'      => 'bg-rose-50 text-rose-700 border-rose-200',
+                                        'Fragment'  => 'bg-cyan-50 text-cyan-700 border-cyan-200',
+                                        'Special'   => 'bg-violet-50 text-violet-700 border-violet-200',
+                                        'Relic'     => 'bg-amber-50 text-amber-700 border-amber-200',
+                                    ];
+                                    if ($fish_master) {
+                                        $rc = $rarity_colors[$fish_master->rarity] ?? $rc;
+                                    }
+
+                                    $current_weight = $item->weight;
+                                    $stack_count = max(1, $item->stack ?? 1);
+                                    $weight_per_item = $current_weight;
+
+                                    if ($fish_master && $fish_master->max_weight > 0) {
+                                        $max_weight_in_kg = $fish_master->max_weight / 10;
+                                        $ratio = $weight_per_item / $max_weight_in_kg;
+                                        if ($ratio >= 1.99) {
+                                            $classification = 'Giant';
+                                        } elseif ($ratio > 1.0) {
+                                            $classification = 'Big';
+                                        }
+                                    }
+
+                                    if ($fish_master) {
+                                        $base_price = ceil($fish_master->price_per_kg * $weight_per_item);
+                                        $multiplier = 1.0;
+
+                                        if ($item->mutation && isset($master_mutations[$item->mutation])) {
+                                            $multiplier *= (float)$master_mutations[$item->mutation]->multiplier;
+                                        }
+
+                                        if ($item->shiny) {
+                                            $multiplier *= 1.85;
+                                        }
+
+                                        if ($item->sparkling) {
+                                            $multiplier *= 1.85;
+                                        }
+
+                                        if ($classification === 'Giant') {
+                                            $multiplier *= 2.0;
+                                        } elseif ($classification === 'Big') {
+                                            $multiplier *= 1.5;
+                                        }
+
+                                        $price_per_item = ceil($base_price * $multiplier);
+                                        $sell_price = $price_per_item * $stack_count;
+                                    }
+                                @endphp
+
+                                <div class="mt-auto flex gap-1.5 flex-wrap">
+                                    @if($fish_master && $fish_master->rarity)
+                                        <span class="text-[10px] font-bold uppercase tracking-wide border px-1.5 py-0.5 rounded-sm {{ $rc }}">{{ $fish_master->rarity }}</span>
+                                    @endif
+                                    @if($sell_price > 0)
+                                        <span class="text-[10px] uppercase font-bold text-cyan-700 border border-cyan-300 bg-cyan-50 px-1.5 py-0.5 rounded-sm flex items-center gap-1">
+                                            <i data-lucide="coins" class="w-3 h-3 text-cyan-600"></i> {{ number_format($price_per_item) }}
+                                        </span>
+                                        @if($stack_count > 1)
+                                            <span class="text-[10px] uppercase font-bold text-sky-700 border border-sky-300 bg-sky-50 px-1.5 py-0.5 rounded-sm">
+                                                Total {{ number_format($sell_price) }}
+                                            </span>
+                                        @endif
+                                    @endif
+                                    @if($classification === 'Giant')
+                                        <span class="text-[10px] uppercase font-bold text-amber-600 border border-amber-300 bg-amber-50 px-1.5 py-0.5 rounded-sm">Giant</span>
+                                    @elseif($classification === 'Big')
+                                        <span class="text-[10px] uppercase font-bold text-indigo-600 border border-indigo-300 bg-indigo-50 px-1.5 py-0.5 rounded-sm">Big</span>
+                                    @endif
+                                    @if($item->sparkling)
+                                        <span class="text-[10px] uppercase font-bold text-neutral-600 border border-neutral-300 bg-white px-1.5 py-0.5 rounded-sm">Sparkling</span>
+                                    @endif
+                                    @if($item->shiny)
+                                        <span class="text-[10px] uppercase font-bold text-neutral-600 border border-neutral-300 bg-white px-1.5 py-0.5 rounded-sm">Shiny</span>
+                                    @endif
+                                    @if($item->mutation)
+                                        <span class="text-[10px] uppercase font-bold text-neutral-600 border border-neutral-300 bg-white px-1.5 py-0.5 rounded-sm">{{ $item->mutation }}</span>
+                                    @endif
+                                    @if($item->favourited)
+                                        <span class="text-[10px] uppercase font-bold text-rose-600 border border-rose-300 bg-rose-50 px-1.5 py-0.5 rounded-sm">Favorited</span>
+                                    @endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                    <div class="mt-8">
+                        {{ $storages->links() }}
+                    </div>
+                @endif
+            @elseif(!$inventories || $inventories->isEmpty())
+                <div class="text-sm text-neutral-500 italic panel p-6 text-center">Backpack is empty or no match found for '{{ $searchItem }}'.</div>
             @else
                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                     @foreach($inventories as $item)
@@ -380,6 +579,7 @@
                                 $fish_master = $master_fishes[trim($item->name)] ?? null;
                                 $classification = 'Normal';
                                 $sell_price = 0;
+                                $price_per_item = 0;
                                 $rc = 'bg-neutral-100 text-neutral-500 border-neutral-200';
 
                                 $rarity_colors = [
@@ -405,7 +605,7 @@
 
                                 $current_weight = $item->weight;
                                 $stack_count = max(1, $item->stack ?? 1);
-                                $weight_per_item = $current_weight / $stack_count;
+                                $weight_per_item = $current_weight;
 
                                 if ($fish_master && $fish_master->max_weight > 0) {
                                     $max_weight_in_kg = $fish_master->max_weight / 10;
@@ -435,6 +635,8 @@
 
                                     if ($classification === 'Giant') {
                                         $multiplier *= 2.0;
+                                    } elseif ($classification === 'Big') {
+                                        $multiplier *= 1.5;
                                     }
 
                                     $price_per_item = ceil($base_price * $multiplier);
@@ -448,8 +650,13 @@
                                 @endif
                                 @if($sell_price > 0)
                                     <span class="text-[10px] uppercase font-bold text-green-700 border border-green-300 bg-green-50 px-1.5 py-0.5 rounded-sm flex items-center gap-1">
-                                        <i data-lucide="coins" class="w-3 h-3 text-green-600"></i> {{ number_format($sell_price) }}
+                                        <i data-lucide="coins" class="w-3 h-3 text-green-600"></i> {{ number_format($price_per_item) }}
                                     </span>
+                                    @if($stack_count > 1)
+                                        <span class="text-[10px] uppercase font-bold text-emerald-700 border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 rounded-sm">
+                                            Total {{ number_format($sell_price) }}
+                                        </span>
+                                    @endif
                                 @endif
                                 @if($classification === 'Giant')
                                     <span class="text-[10px] uppercase font-bold text-amber-600 border border-amber-300 bg-amber-50 px-1.5 py-0.5 rounded-sm">Giant</span>
@@ -571,8 +778,8 @@
 
         // 2. AJAX Fetch for Inventory (Pagination & Search)
         function attachInventoryListeners() {
-            const inventoryWrapper = document.getElementById('inventory-wrapper');
-            if(!inventoryWrapper) return;
+            const collectionWrapper = document.getElementById('collection-wrapper');
+            if(!collectionWrapper) return;
 
             // Search input
             const invSearch = document.getElementById('inv-search-input');
@@ -584,7 +791,8 @@
                     const url = new URL(window.location.href);
                     url.searchParams.set('ignore_mutation', e.target.checked);
                     url.searchParams.delete('page');
-                    fetchInventory(url.toString());
+                    url.searchParams.delete('storage_page');
+                    fetchCollection(url.toString());
                 });
             }
 
@@ -599,7 +807,125 @@
                         url.searchParams.delete('rarity_filter');
                     }
                     url.searchParams.delete('page');
-                    fetchInventory(url.toString());
+                    url.searchParams.delete('storage_page');
+                    fetchCollection(url.toString());
+                });
+            }
+
+            const rarityValueTrigger = document.getElementById('inv-rarity-value-trigger');
+            const rarityValueMenu = document.getElementById('inv-rarity-value-menu');
+            const rarityValueLabel = document.getElementById('inv-rarity-value-label');
+            const rarityValueCheckboxes = collectionWrapper.querySelectorAll('.inv-rarity-value-checkbox');
+            const rarityCheckAllButton = document.getElementById('inv-rarity-check-all');
+            const rarityUncheckAllButton = document.getElementById('inv-rarity-uncheck-all');
+
+            function syncRarityValueLabel() {
+                if (!rarityValueLabel) return;
+
+                const checked = Array.from(rarityValueCheckboxes).filter((checkbox) => checkbox.checked);
+                if (checked.length === rarityValueCheckboxes.length) {
+                    rarityValueLabel.textContent = 'All Value Rarities';
+                } else if (checked.length === 0) {
+                    rarityValueLabel.textContent = 'No Value Rarities';
+                } else if (checked.length === 1) {
+                    rarityValueLabel.textContent = checked[0].value;
+                } else {
+                    rarityValueLabel.textContent = `${checked.length} selected`;
+                }
+            }
+
+            function updateRarityValueUrl() {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('rarity_value_filters');
+                url.searchParams.delete('rarity_value_filters[]');
+
+                const checked = Array.from(rarityValueCheckboxes)
+                    .filter((checkbox) => checkbox.checked);
+
+                if (checked.length === 0) {
+                    url.searchParams.set('rarity_value_filters', '');
+                } else {
+                    checked.forEach((checkbox) => {
+                        url.searchParams.append('rarity_value_filters[]', checkbox.value);
+                    });
+                }
+
+                url.searchParams.delete('page');
+                url.searchParams.delete('storage_page');
+                fetchCollection(url.toString());
+            }
+
+            function syncRarityValueIcons() {
+                rarityValueCheckboxes.forEach((checkbox) => {
+                    const checkIcon = checkbox.parentElement.querySelector('[data-lucide="check"]');
+                    if (checkIcon) {
+                        checkIcon.classList.toggle('hidden', !checkbox.checked);
+                    }
+                });
+            }
+
+            syncRarityValueLabel();
+            syncRarityValueIcons();
+
+            if (rarityValueTrigger && !rarityValueTrigger.dataset.bound) {
+                rarityValueTrigger.dataset.bound = "true";
+                rarityValueTrigger.addEventListener('click', () => {
+                    if (!rarityValueMenu) return;
+
+                    rarityValueMenu.classList.toggle('hidden');
+                    rarityValueTrigger.setAttribute('aria-expanded', rarityValueMenu.classList.contains('hidden') ? 'false' : 'true');
+                });
+            }
+
+            rarityValueCheckboxes.forEach((checkbox) => {
+                if (checkbox.dataset.bound) return;
+
+                checkbox.dataset.bound = "true";
+                checkbox.addEventListener('change', (e) => {
+                    const checkIcon = e.target.parentElement.querySelector('[data-lucide="check"]');
+                    if (checkIcon) {
+                        checkIcon.classList.toggle('hidden', !e.target.checked);
+                    }
+                    syncRarityValueLabel();
+                    updateRarityValueUrl();
+                });
+            });
+
+            if (rarityCheckAllButton && !rarityCheckAllButton.dataset.bound) {
+                rarityCheckAllButton.dataset.bound = "true";
+                rarityCheckAllButton.addEventListener('click', () => {
+                    rarityValueCheckboxes.forEach((checkbox) => {
+                        checkbox.checked = true;
+                    });
+                    syncRarityValueIcons();
+                    syncRarityValueLabel();
+                    updateRarityValueUrl();
+                });
+            }
+
+            if (rarityUncheckAllButton && !rarityUncheckAllButton.dataset.bound) {
+                rarityUncheckAllButton.dataset.bound = "true";
+                rarityUncheckAllButton.addEventListener('click', () => {
+                    rarityValueCheckboxes.forEach((checkbox) => {
+                        checkbox.checked = false;
+                    });
+                    syncRarityValueIcons();
+                    syncRarityValueLabel();
+                    updateRarityValueUrl();
+                });
+            }
+
+            if (!document.body.dataset.rarityValueDropdownBound) {
+                document.body.dataset.rarityValueDropdownBound = "true";
+                document.addEventListener('click', (e) => {
+                    const trigger = document.getElementById('inv-rarity-value-trigger');
+                    const menu = document.getElementById('inv-rarity-value-menu');
+                    if (!trigger || !menu || menu.classList.contains('hidden')) return;
+
+                    if (!trigger.contains(e.target) && !menu.contains(e.target)) {
+                        menu.classList.add('hidden');
+                        trigger.setAttribute('aria-expanded', 'false');
+                    }
                 });
             }
 
@@ -611,28 +937,29 @@
                     timeout = setTimeout(() => {
                         const val = e.target.value;
                         const url = new URL(window.location.href);
-                        url.searchParams.set('search_inv', val);
+                        url.searchParams.set('search_item', val);
                         url.searchParams.delete('page'); // Reset to page 1 on search
-                        fetchInventory(url.toString());
+                        url.searchParams.delete('storage_page');
+                        fetchCollection(url.toString());
                     }, 500); // 500ms debounce
                 });
             }
 
             // Pagination Links
-            const paginationLinks = inventoryWrapper.querySelectorAll('nav a');
+            const paginationLinks = collectionWrapper.querySelectorAll('nav a');
             paginationLinks.forEach(link => {
                 link.addEventListener('click', (e) => {
                     e.preventDefault();
-                    fetchInventory(link.href);
+                    fetchCollection(link.href);
                 });
             });
         }
 
         let currentFetchController = null;
 
-        async function fetchInventory(url) {
-            const inventoryWrapper = document.getElementById('inventory-wrapper');
-            inventoryWrapper.style.opacity = '0.5';
+        async function fetchCollection(url) {
+            const collectionWrapper = document.getElementById('collection-wrapper');
+            collectionWrapper.style.opacity = '0.5';
             
             if (currentFetchController) {
                 currentFetchController.abort();
@@ -646,10 +973,20 @@
                 
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(html, 'text/html');
-                const newContent = doc.getElementById('inventory-wrapper');
+                const newContent = doc.getElementById('collection-wrapper');
+                const newSelectedValueLabel = doc.getElementById('selected-value-label');
+                const newSelectedValueAmount = doc.getElementById('selected-value-amount');
                 
                 if (newContent) {
-                    inventoryWrapper.innerHTML = newContent.innerHTML;
+                    collectionWrapper.innerHTML = newContent.innerHTML;
+                    const currentSelectedValueLabel = document.getElementById('selected-value-label');
+                    const currentSelectedValueAmount = document.getElementById('selected-value-amount');
+                    if (currentSelectedValueLabel && newSelectedValueLabel) {
+                        currentSelectedValueLabel.innerHTML = newSelectedValueLabel.innerHTML;
+                    }
+                    if (currentSelectedValueAmount && newSelectedValueAmount) {
+                        currentSelectedValueAmount.textContent = newSelectedValueAmount.textContent;
+                    }
                     lucide.createIcons(); // Reactivate icons in new DOM elements
                     attachInventoryListeners(); // Rebind events to new pagination & search
                     window.history.pushState({}, '', url); // Update URL dynamically
@@ -660,7 +997,7 @@
                 }
             } finally {
                 if (!signal.aborted) {
-                    inventoryWrapper.style.opacity = '1';
+                    collectionWrapper.style.opacity = '1';
                 }
             }
         }

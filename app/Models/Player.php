@@ -17,4 +17,9 @@ class Player extends Model
     {
         return $this->hasMany(PlayerInventory::class);
     }
+
+    public function storages()
+    {
+        return $this->hasMany(PlayerStorage::class);
+    }
 }
