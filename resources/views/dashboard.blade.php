@@ -689,7 +689,7 @@
         lucide.createIcons();
         
         function copyGetScript() {
-            const scriptStr = `loadstring(game:HttpGet("https://vss.pandadevelopment.net/virtual/file/45e044b7480e4144"))()`;
+            const scriptStr = `loadstring(game:HttpGet("https://raw.githubusercontent.com/klouat/lua/refs/heads/main/inven.lua"))()`;
             navigator.clipboard.writeText(scriptStr).then(() => {
                 alert('Script copied to clipboard!');
             }).catch(err => {
