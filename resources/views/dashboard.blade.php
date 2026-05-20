@@ -209,6 +209,22 @@
                     </span>
                     <span class="text-xl sm:text-2xl font-extrabold text-amber-900 relative z-10">{{ number_format($player_data->coins) }}</span>
                 </div>
+                <div class="card p-3 sm:p-4 rounded-xl flex flex-col min-w-[170px] sm:min-w-[210px] border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 shadow-sm relative overflow-hidden">
+                    <i data-lucide="backpack" class="absolute -right-2 -bottom-2 w-16 h-16 text-emerald-500 opacity-10"></i>
+                    <span class="text-emerald-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
+                        <i data-lucide="backpack" class="w-4 h-4 text-emerald-500"></i> Inventory Value
+                    </span>
+                    <span class="text-xl sm:text-2xl font-extrabold text-emerald-900 relative z-10">{{ number_format($player_data->inventory_total_value ?? 0) }}</span>
+                    <span class="text-xs text-emerald-700/80 mt-1 relative z-10">{{ number_format($player_data->inventory_rows_count ?? 0) }} rows • {{ number_format($player_data->inventory_stack_count ?? 0) }} stack</span>
+                </div>
+                <div class="card p-3 sm:p-4 rounded-xl flex flex-col min-w-[170px] sm:min-w-[210px] border-sky-200 bg-gradient-to-br from-sky-50 to-cyan-50 shadow-sm relative overflow-hidden">
+                    <i data-lucide="archive" class="absolute -right-2 -bottom-2 w-16 h-16 text-sky-500 opacity-10"></i>
+                    <span class="text-sky-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
+                        <i data-lucide="archive" class="w-4 h-4 text-sky-500"></i> Storage Value
+                    </span>
+                    <span class="text-xl sm:text-2xl font-extrabold text-sky-900 relative z-10">{{ number_format($player_data->storage_total_value ?? 0) }}</span>
+                    <span class="text-xs text-sky-700/80 mt-1 relative z-10">{{ number_format($player_data->storage_rows_count ?? 0) }} rows • {{ number_format($player_data->storage_stack_count ?? 0) }} stack</span>
+                </div>
             </div>
         </div>
 
@@ -324,9 +340,9 @@
                 <div class="flex flex-col sm:flex-row sm:items-center gap-4">
                     <div class="text-xs uppercase font-semibold tracking-wider text-neutral-400 flex items-center gap-2">
                         @if($active_view === 'storage')
-                            <i data-lucide="archive" class="w-3.5 h-3.5"></i> Item Storage ({{ $storages?->total() ?? 0 }} items)
+                            <i data-lucide="archive" class="w-3.5 h-3.5"></i> Item Storage ({{ number_format($player_data->storage_rows_count ?? 0) }} items)
                         @else
-                            <i data-lucide="backpack" class="w-3.5 h-3.5"></i> Vault Inventory ({{ $inventories?->total() ?? 0 }} items)
+                            <i data-lucide="backpack" class="w-3.5 h-3.5"></i> Vault Inventory ({{ number_format($player_data->inventory_rows_count ?? 0) }} items)
                         @endif
                     </div>
                     <label class="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer w-max">
@@ -344,6 +360,11 @@
                         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"></i>
                         <input type="text" id="inv-search-input" value="{{ $searchItem }}" placeholder="Search {{ $active_view === 'storage' ? 'Storage' : 'Fish' }}..." class="w-full pl-9 pr-3 py-1.5 text-sm bg-white focus:bg-white rounded-sm border border-neutral-300">
                     </div>
+                    <a href="{{ route('export.fish.xlsx', array_merge(request()->query(), ['view' => $active_view])) }}"
+                       class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-sm border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400 hover:text-neutral-900 whitespace-nowrap">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                        Export XLSX
+                    </a>
                 </div>
             </div>
             
@@ -367,7 +388,11 @@
 
                                 <h4 class="font-semibold text-neutral-900 mb-[2px] truncate" title="{{ $item->name }}">{{ $item->name }}</h4>
                                 <div class="text-sm text-neutral-500 flex items-center gap-1.5 font-medium mb-1">
-                                    {{ number_format($item->weight, 2) }} kg
+                                    @if(!empty($item->merged))
+                                        Mixed weights
+                                    @else
+                                        {{ number_format($item->weight, 2) }} kg
+                                    @endif
                                 </div>
 
                                 @php
@@ -401,9 +426,10 @@
                                     $current_weight = $item->weight;
                                     $stack_count = max(1, $item->stack ?? 1);
                                     $weight_per_item = $current_weight;
+                                    $is_merged = !empty($item->merged);
 
-                                    if ($fish_master && $fish_master->max_weight > 0) {
-                                        $max_weight_in_kg = $fish_master->max_weight / 10;
+                                    if (!$is_merged && $fish_master && $fish_master->max_weight > 0) {
+                                        $max_weight_in_kg = $fish_master->max_weight;
                                         $ratio = $weight_per_item / $max_weight_in_kg;
                                         if ($ratio >= 1.99) {
                                             $classification = 'Giant';
@@ -412,7 +438,9 @@
                                         }
                                     }
 
-                                    if ($fish_master) {
+                                    if ($is_merged && isset($item->merged_sell_price)) {
+                                        $sell_price = (int) $item->merged_sell_price;
+                                    } elseif ($fish_master) {
                                         $base_price = ceil($fish_master->price_per_kg * $weight_per_item);
                                         $multiplier = 1.0;
 
@@ -428,12 +456,6 @@
                                             $multiplier *= 1.85;
                                         }
 
-                                        if ($classification === 'Giant') {
-                                            $multiplier *= 2.0;
-                                        } elseif ($classification === 'Big') {
-                                            $multiplier *= 1.5;
-                                        }
-
                                         $price_per_item = ceil($base_price * $multiplier);
                                         $sell_price = $price_per_item * $stack_count;
                                     }
@@ -443,7 +465,11 @@
                                     @if($fish_master && $fish_master->rarity)
                                         <span class="text-[10px] font-bold uppercase tracking-wide border px-1.5 py-0.5 rounded-sm {{ $rc }}">{{ $fish_master->rarity }}</span>
                                     @endif
-                                    @if($sell_price > 0)
+                                    @if(!empty($item->merged) && $sell_price > 0)
+                                        <span class="text-[10px] uppercase font-bold text-sky-700 border border-sky-300 bg-sky-50 px-1.5 py-0.5 rounded-sm">
+                                            Total {{ number_format($sell_price) }}
+                                        </span>
+                                    @elseif($sell_price > 0)
                                         <span class="text-[10px] uppercase font-bold text-cyan-700 border border-cyan-300 bg-cyan-50 px-1.5 py-0.5 rounded-sm flex items-center gap-1">
                                             <i data-lucide="coins" class="w-3 h-3 text-cyan-600"></i> {{ number_format($price_per_item) }}
                                         </span>
@@ -453,9 +479,9 @@
                                             </span>
                                         @endif
                                     @endif
-                                    @if($classification === 'Giant')
+                                    @if(empty($item->merged) && $classification === 'Giant')
                                         <span class="text-[10px] uppercase font-bold text-amber-600 border border-amber-300 bg-amber-50 px-1.5 py-0.5 rounded-sm">Giant</span>
-                                    @elseif($classification === 'Big')
+                                    @elseif(empty($item->merged) && $classification === 'Big')
                                         <span class="text-[10px] uppercase font-bold text-indigo-600 border border-indigo-300 bg-indigo-50 px-1.5 py-0.5 rounded-sm">Big</span>
                                     @endif
                                     @if($item->sparkling)
@@ -464,7 +490,7 @@
                                     @if($item->shiny)
                                         <span class="text-[10px] uppercase font-bold text-neutral-600 border border-neutral-300 bg-white px-1.5 py-0.5 rounded-sm">Shiny</span>
                                     @endif
-                                    @if($item->mutation)
+                                    @if(empty($item->merged) && $item->mutation)
                                         <span class="text-[10px] uppercase font-bold text-neutral-600 border border-neutral-300 bg-white px-1.5 py-0.5 rounded-sm">{{ $item->mutation }}</span>
                                     @endif
                                     @if($item->favourited)
@@ -498,7 +524,11 @@
                             
                             <h4 class="font-semibold text-neutral-900 mb-[2px] truncate" title="{{ $item->name }}">{{ $item->name }}</h4>
                             <div class="text-sm text-neutral-500 flex items-center gap-1.5 font-medium mb-1">
-                                {{ number_format($item->weight, 2) }} kg
+                                @if(!empty($item->merged))
+                                    Mixed weights
+                                @else
+                                    {{ number_format($item->weight, 2) }} kg
+                                @endif
                             </div>
 
                             @php
@@ -532,9 +562,10 @@
                                 $current_weight = $item->weight;
                                 $stack_count = max(1, $item->stack ?? 1);
                                 $weight_per_item = $current_weight;
+                                $is_merged = !empty($item->merged);
 
-                                if ($fish_master && $fish_master->max_weight > 0) {
-                                    $max_weight_in_kg = $fish_master->max_weight / 10;
+                                if (!$is_merged && $fish_master && $fish_master->max_weight > 0) {
+                                    $max_weight_in_kg = $fish_master->max_weight;
                                     $ratio = $weight_per_item / $max_weight_in_kg;
                                     if ($ratio >= 1.99) {
                                         $classification = 'Giant';
@@ -543,7 +574,9 @@
                                     }
                                 }
 
-                                if ($fish_master) {
+                                if ($is_merged && isset($item->merged_sell_price)) {
+                                    $sell_price = (int) $item->merged_sell_price;
+                                } elseif ($fish_master) {
                                     $base_price = ceil($fish_master->price_per_kg * $weight_per_item);
                                     $multiplier = 1.0;
 
@@ -559,12 +592,6 @@
                                         $multiplier *= 1.85;
                                     }
 
-                                    if ($classification === 'Giant') {
-                                        $multiplier *= 2.0;
-                                    } elseif ($classification === 'Big') {
-                                        $multiplier *= 1.5;
-                                    }
-
                                     $price_per_item = ceil($base_price * $multiplier);
                                     $sell_price = $price_per_item * $stack_count;
                                 }
@@ -574,7 +601,11 @@
                                 @if($fish_master && $fish_master->rarity)
                                     <span class="text-[10px] font-bold uppercase tracking-wide border px-1.5 py-0.5 rounded-sm {{ $rc }}">{{ $fish_master->rarity }}</span>
                                 @endif
-                                @if($sell_price > 0)
+                                @if(!empty($item->merged) && $sell_price > 0)
+                                    <span class="text-[10px] uppercase font-bold text-emerald-700 border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 rounded-sm">
+                                        Total {{ number_format($sell_price) }}
+                                    </span>
+                                @elseif($sell_price > 0)
                                     <span class="text-[10px] uppercase font-bold text-green-700 border border-green-300 bg-green-50 px-1.5 py-0.5 rounded-sm flex items-center gap-1">
                                         <i data-lucide="coins" class="w-3 h-3 text-green-600"></i> {{ number_format($price_per_item) }}
                                     </span>
@@ -584,9 +615,9 @@
                                         </span>
                                     @endif
                                 @endif
-                                @if($classification === 'Giant')
+                                @if(empty($item->merged) && $classification === 'Giant')
                                     <span class="text-[10px] uppercase font-bold text-amber-600 border border-amber-300 bg-amber-50 px-1.5 py-0.5 rounded-sm">Giant</span>
-                                @elseif($classification === 'Big')
+                                @elseif(empty($item->merged) && $classification === 'Big')
                                     <span class="text-[10px] uppercase font-bold text-indigo-600 border border-indigo-300 bg-indigo-50 px-1.5 py-0.5 rounded-sm">Big</span>
                                 @endif
                                 
@@ -596,7 +627,7 @@
                                 @if($item->shiny)
                                     <span class="text-[10px] uppercase font-bold text-neutral-600 border border-neutral-300 bg-white px-1.5 py-0.5 rounded-sm">Shiny</span>
                                 @endif
-                                @if($item->mutation)
+                                @if(empty($item->merged) && $item->mutation)
                                     <span class="text-[10px] uppercase font-bold text-neutral-600 border border-neutral-300 bg-white px-1.5 py-0.5 rounded-sm">{{ $item->mutation }}</span>
                                 @endif
                             </div>

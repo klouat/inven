@@ -16,6 +16,7 @@ Route::post('/logout', [AuthController::class, 'logout'])->name('logout')->middl
 // Dashboard Routes
 Route::middleware('auth')->group(function () {
     Route::get('/', [PlayerController::class, 'index'])->name('home');
+    Route::get('/export/fish-xlsx', [PlayerController::class, 'exportFishXlsx'])->name('export.fish.xlsx');
     Route::post('/track', [PlayerController::class, 'track_player'])->name('track.player');
     Route::delete('/untrack/{id}', [PlayerController::class, 'untrack_player'])->name('untrack.player');
 });
