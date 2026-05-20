@@ -83,7 +83,7 @@ class PlayerController extends Controller
                             $request
                         );
                     } else {
-                        $inventories = $invQuery->simplePaginate(30)->withQueryString();
+                        $inventories = $invQuery->paginate(30)->withQueryString();
                     }
                 } else {
                     $storageQuery = $player_data->storages()->latest('id');
@@ -105,7 +105,7 @@ class PlayerController extends Controller
                             $request
                         );
                     } else {
-                        $storages = $storageQuery->simplePaginate(30)->withQueryString();
+                        $storages = $storageQuery->paginate(30)->withQueryString();
                     }
                 }
             }
