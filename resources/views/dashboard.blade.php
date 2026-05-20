@@ -209,22 +209,6 @@
                     </span>
                     <span class="text-xl sm:text-2xl font-extrabold text-amber-900 relative z-10">{{ number_format($player_data->coins) }}</span>
                 </div>
-                
-                <div class="card p-3 sm:p-4 rounded-xl flex flex-col min-w-[140px] sm:min-w-[170px] border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 shadow-sm relative overflow-hidden">
-                    <i data-lucide="banknote" class="absolute -right-2 -bottom-2 w-16 h-16 text-green-500 opacity-10"></i>
-                    <span id="selected-value-label" class="text-green-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
-                        <i data-lucide="banknote" class="w-4 h-4 text-green-500"></i> Selected {{ $active_view === 'storage' ? 'Storage' : 'Inventory' }} Value
-                    </span>
-                    <span id="selected-value-amount" class="text-xl sm:text-2xl font-extrabold text-green-900 relative z-10">{{ number_format($active_view === 'storage' ? $selected_storage_rarity_total_value : $selected_rarity_total_value) }}</span>
-                </div>
-
-                <div class="card p-3 sm:p-4 rounded-xl flex flex-col min-w-[140px] sm:min-w-[170px] border-cyan-200 bg-gradient-to-br from-cyan-50 to-sky-50 shadow-sm relative overflow-hidden">
-                    <i data-lucide="archive" class="absolute -right-2 -bottom-2 w-16 h-16 text-cyan-500 opacity-10"></i>
-                    <span class="text-cyan-700 text-[11px] sm:text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1.5 relative z-10">
-                        <i data-lucide="archive" class="w-4 h-4 text-cyan-500"></i> Storage Value
-                    </span>
-                    <span class="text-xl sm:text-2xl font-extrabold text-cyan-900 relative z-10">{{ number_format($total_storage_value) }}</span>
-                </div>
             </div>
         </div>
 
@@ -282,17 +266,10 @@
                             'owned'                => true,
                         ]) : '{}';
                     @endphp
-                    <div class="card p-3 flex flex-col items-center gap-3 text-center h-full rod-item cursor-pointer hover:border-neutral-400 transition-colors"
+                    <div class="card p-3 flex flex-col justify-center items-center gap-3 text-center h-full rod-item cursor-pointer hover:border-neutral-400 transition-colors"
                          data-name="{{ strtolower($rod->name) }}"
                          data-owned="true"
                          onclick="openRodModal({{ Js::from(json_decode($rod_data)) }})">
-                        <div class="h-16 w-16 bg-neutral-100 flex items-center justify-center p-1 rounded-sm border border-neutral-200">
-                            @if($master && $master->image_url)
-                                <img src="{{ $master->image_url }}" alt="{{ $rod->name }}" class="object-contain w-full h-full drop-shadow-sm">
-                            @else
-                                <i data-lucide="ruler" class="w-6 h-6 text-neutral-400"></i>
-                            @endif
-                        </div>
                         <span class="text-xs font-semibold text-neutral-800 leading-tight">{{ $rod->name }}</span>
                     </div>
                     @endforeach
@@ -319,17 +296,10 @@
                             'owned'                => false,
                         ]);
                     @endphp
-                    <div class="card p-3 flex flex-col items-center gap-3 text-center h-full bg-neutral-50 border-neutral-100 opacity-60 grayscale filter rod-item missing-rod hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    <div class="card p-3 flex flex-col justify-center items-center gap-3 text-center h-full bg-neutral-50 border-neutral-100 opacity-60 grayscale filter rod-item missing-rod hidden cursor-pointer hover:opacity-80 transition-opacity"
                          data-name="{{ strtolower($missing->name) }}"
                          data-owned="false"
                          onclick="openRodModal({{ Js::from(json_decode($miss_data)) }})">
-                        <div class="h-16 w-16 flex items-center justify-center p-1 rounded-sm border border-neutral-200">
-                            @if($missing->image_url)
-                                <img src="{{ $missing->image_url }}" alt="{{ $missing->name }}" class="object-contain w-full h-full">
-                            @else
-                                <i data-lucide="ruler" class="w-6 h-6 text-neutral-300"></i>
-                            @endif
-                        </div>
                         <span class="text-xs font-semibold text-neutral-500 leading-tight line-through">{{ $missing->name }}</span>
                     </div>
                     @endforeach
@@ -370,50 +340,6 @@
                             <option value="{{ $rarity }}" {{ $rarity_filter === $rarity ? 'selected' : '' }}>{{ $rarity }}</option>
                         @endforeach
                     </select>
-                    <div class="relative w-full sm:w-56">
-                        <button
-                            type="button"
-                            id="inv-rarity-value-trigger"
-                            class="w-full pl-3 pr-10 py-1.5 text-sm bg-white rounded-sm border border-neutral-300 text-left flex items-center justify-between"
-                            aria-haspopup="true"
-                            aria-expanded="false"
-                        >
-                            <span id="inv-rarity-value-label">
-                                @if(count($rarity_value_filters ?? []) === count($rarity_options ?? []))
-                                    All Value Rarities
-                                @elseif(!empty($rarity_value_filters))
-                                    {{ count($rarity_value_filters) }} selected
-                                @else
-                                    Value Rarities
-                                @endif
-                            </span>
-                            <i data-lucide="chevron-down" class="w-4 h-4 text-neutral-400"></i>
-                        </button>
-                        <div id="inv-rarity-value-menu" class="multi-select-menu hidden absolute z-20 mt-1 w-full bg-white border border-neutral-200 rounded-sm shadow-lg p-1 max-h-64 overflow-y-auto">
-                            <div class="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-neutral-100 mb-1">
-                                <button type="button" id="inv-rarity-check-all" class="text-xs font-semibold text-green-700 hover:text-green-800">
-                                    Check all
-                                </button>
-                                <button type="button" id="inv-rarity-uncheck-all" class="text-xs font-semibold text-neutral-500 hover:text-neutral-700">
-                                    Uncheck all
-                                </button>
-                            </div>
-                            @foreach($rarity_options as $rarity)
-                                <label class="flex items-center justify-between gap-3 px-2 py-1.5 rounded-sm hover:bg-neutral-50 cursor-pointer text-sm text-neutral-700">
-                                    <span>{{ $rarity }}</span>
-                                    <span class="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            class="inv-rarity-value-checkbox"
-                                            value="{{ $rarity }}"
-                                            {{ in_array($rarity, $rarity_value_filters ?? [], true) ? 'checked' : '' }}
-                                        >
-                                        <i data-lucide="check" class="w-4 h-4 text-green-600 {{ in_array($rarity, $rarity_value_filters ?? [], true) ? '' : 'hidden' }}"></i>
-                                    </span>
-                                </label>
-                            @endforeach
-                        </div>
-                    </div>
                     <div class="relative w-full sm:w-48">
                         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"></i>
                         <input type="text" id="inv-search-input" value="{{ $searchItem }}" placeholder="Search {{ $active_view === 'storage' ? 'Storage' : 'Fish' }}..." class="w-full pl-9 pr-3 py-1.5 text-sm bg-white focus:bg-white rounded-sm border border-neutral-300">
@@ -692,9 +618,6 @@
         <div id="rod-modal-panel" class="panel rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
             {{-- Modal Header --}}
             <div class="flex items-start gap-4 p-5 border-b border-neutral-100">
-                <div class="w-20 h-20 flex-shrink-0 bg-neutral-100 rounded-lg border border-neutral-200 flex items-center justify-center overflow-hidden">
-                    <img id="modal-img" src="" alt="" class="w-full h-full object-contain drop-shadow-sm">
-                </div>
                 <div class="flex-1 min-w-0">
                     <div id="modal-owned-badge" class="inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-sm mb-1.5"></div>
                     <h3 id="modal-name" class="text-lg font-bold text-neutral-900 leading-tight"></h3>
@@ -812,123 +735,6 @@
                 });
             }
 
-            const rarityValueTrigger = document.getElementById('inv-rarity-value-trigger');
-            const rarityValueMenu = document.getElementById('inv-rarity-value-menu');
-            const rarityValueLabel = document.getElementById('inv-rarity-value-label');
-            const rarityValueCheckboxes = collectionWrapper.querySelectorAll('.inv-rarity-value-checkbox');
-            const rarityCheckAllButton = document.getElementById('inv-rarity-check-all');
-            const rarityUncheckAllButton = document.getElementById('inv-rarity-uncheck-all');
-
-            function syncRarityValueLabel() {
-                if (!rarityValueLabel) return;
-
-                const checked = Array.from(rarityValueCheckboxes).filter((checkbox) => checkbox.checked);
-                if (checked.length === rarityValueCheckboxes.length) {
-                    rarityValueLabel.textContent = 'All Value Rarities';
-                } else if (checked.length === 0) {
-                    rarityValueLabel.textContent = 'No Value Rarities';
-                } else if (checked.length === 1) {
-                    rarityValueLabel.textContent = checked[0].value;
-                } else {
-                    rarityValueLabel.textContent = `${checked.length} selected`;
-                }
-            }
-
-            function updateRarityValueUrl() {
-                const url = new URL(window.location.href);
-                url.searchParams.delete('rarity_value_filters');
-                url.searchParams.delete('rarity_value_filters[]');
-
-                const checked = Array.from(rarityValueCheckboxes)
-                    .filter((checkbox) => checkbox.checked);
-
-                if (checked.length === 0) {
-                    url.searchParams.set('rarity_value_filters', '');
-                } else {
-                    checked.forEach((checkbox) => {
-                        url.searchParams.append('rarity_value_filters[]', checkbox.value);
-                    });
-                }
-
-                url.searchParams.delete('page');
-                url.searchParams.delete('storage_page');
-                fetchCollection(url.toString());
-            }
-
-            function syncRarityValueIcons() {
-                rarityValueCheckboxes.forEach((checkbox) => {
-                    const checkIcon = checkbox.parentElement.querySelector('[data-lucide="check"]');
-                    if (checkIcon) {
-                        checkIcon.classList.toggle('hidden', !checkbox.checked);
-                    }
-                });
-            }
-
-            syncRarityValueLabel();
-            syncRarityValueIcons();
-
-            if (rarityValueTrigger && !rarityValueTrigger.dataset.bound) {
-                rarityValueTrigger.dataset.bound = "true";
-                rarityValueTrigger.addEventListener('click', () => {
-                    if (!rarityValueMenu) return;
-
-                    rarityValueMenu.classList.toggle('hidden');
-                    rarityValueTrigger.setAttribute('aria-expanded', rarityValueMenu.classList.contains('hidden') ? 'false' : 'true');
-                });
-            }
-
-            rarityValueCheckboxes.forEach((checkbox) => {
-                if (checkbox.dataset.bound) return;
-
-                checkbox.dataset.bound = "true";
-                checkbox.addEventListener('change', (e) => {
-                    const checkIcon = e.target.parentElement.querySelector('[data-lucide="check"]');
-                    if (checkIcon) {
-                        checkIcon.classList.toggle('hidden', !e.target.checked);
-                    }
-                    syncRarityValueLabel();
-                    updateRarityValueUrl();
-                });
-            });
-
-            if (rarityCheckAllButton && !rarityCheckAllButton.dataset.bound) {
-                rarityCheckAllButton.dataset.bound = "true";
-                rarityCheckAllButton.addEventListener('click', () => {
-                    rarityValueCheckboxes.forEach((checkbox) => {
-                        checkbox.checked = true;
-                    });
-                    syncRarityValueIcons();
-                    syncRarityValueLabel();
-                    updateRarityValueUrl();
-                });
-            }
-
-            if (rarityUncheckAllButton && !rarityUncheckAllButton.dataset.bound) {
-                rarityUncheckAllButton.dataset.bound = "true";
-                rarityUncheckAllButton.addEventListener('click', () => {
-                    rarityValueCheckboxes.forEach((checkbox) => {
-                        checkbox.checked = false;
-                    });
-                    syncRarityValueIcons();
-                    syncRarityValueLabel();
-                    updateRarityValueUrl();
-                });
-            }
-
-            if (!document.body.dataset.rarityValueDropdownBound) {
-                document.body.dataset.rarityValueDropdownBound = "true";
-                document.addEventListener('click', (e) => {
-                    const trigger = document.getElementById('inv-rarity-value-trigger');
-                    const menu = document.getElementById('inv-rarity-value-menu');
-                    if (!trigger || !menu || menu.classList.contains('hidden')) return;
-
-                    if (!trigger.contains(e.target) && !menu.contains(e.target)) {
-                        menu.classList.add('hidden');
-                        trigger.setAttribute('aria-expanded', 'false');
-                    }
-                });
-            }
-
             if (invSearch && !invSearch.dataset.bound) {
                 invSearch.dataset.bound = "true";
                 let timeout = null;
@@ -974,19 +780,8 @@
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(html, 'text/html');
                 const newContent = doc.getElementById('collection-wrapper');
-                const newSelectedValueLabel = doc.getElementById('selected-value-label');
-                const newSelectedValueAmount = doc.getElementById('selected-value-amount');
-                
                 if (newContent) {
                     collectionWrapper.innerHTML = newContent.innerHTML;
-                    const currentSelectedValueLabel = document.getElementById('selected-value-label');
-                    const currentSelectedValueAmount = document.getElementById('selected-value-amount');
-                    if (currentSelectedValueLabel && newSelectedValueLabel) {
-                        currentSelectedValueLabel.innerHTML = newSelectedValueLabel.innerHTML;
-                    }
-                    if (currentSelectedValueAmount && newSelectedValueAmount) {
-                        currentSelectedValueAmount.textContent = newSelectedValueAmount.textContent;
-                    }
                     lucide.createIcons(); // Reactivate icons in new DOM elements
                     attachInventoryListeners(); // Rebind events to new pagination & search
                     window.history.pushState({}, '', url); // Update URL dynamically
@@ -1009,8 +804,6 @@
         function openRodModal(rod) {
             const modal = document.getElementById('rod-modal');
 
-            document.getElementById('modal-img').src         = rod.image_url || '';
-            document.getElementById('modal-img').alt         = rod.name;
             document.getElementById('modal-name').textContent = rod.name;
             document.getElementById('modal-from').textContent = rod.from ? '📍 ' + rod.from : '';
             document.getElementById('modal-description').textContent = rod.description || 'No description.';

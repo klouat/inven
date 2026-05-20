@@ -11,7 +11,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Exception;
 
 class PlayerController extends Controller
@@ -32,10 +31,6 @@ class PlayerController extends Controller
         $player_data = null;
         $inventories = null;
         $storages = null;
-        $total_sell_value = 0;
-        $selected_rarity_total_value = 0;
-        $total_storage_value = 0;
-        $selected_storage_rarity_total_value = 0;
         $active_view = $request->query('view', 'inventory');
         if (!in_array($active_view, ['inventory', 'storage'], true)) {
             $active_view = 'inventory';
@@ -45,12 +40,6 @@ class PlayerController extends Controller
         $searchItem     = $request->query('search_item', '');
         $ignore_mutation = $request->query('ignore_mutation') === 'true';
         $rarity_filter  = $request->query('rarity_filter', '');
-        $rarity_value_filter_applied = $request->query->has('rarity_value_filters');
-        $requested_rarity_value_filters = collect((array) $request->query('rarity_value_filters', []))
-            ->filter(fn ($rarity) => filled($rarity))
-            ->values()
-            ->all();
-
         // Fetch Master Data directly (Cache exceeds cPanel memcached/packet limits)
         $master_rods = \App\Models\MasterRod::all()->keyBy('name');
         
@@ -62,74 +51,15 @@ class PlayerController extends Controller
             return trim($mutation->name);
         });
 
-        // All distinct rarities for the dropdown
         $rarity_options = \App\Models\Fish::whereNotNull('rarity')
             ->distinct()
             ->orderBy('rarity')
             ->pluck('rarity');
 
-        $saved_rarity_value_filters = collect((array) ($user->rarity_value_filters ?? []))
-            ->filter(fn ($rarity) => $rarity_options->contains($rarity))
-            ->values()
-            ->all();
-
-        if ($rarity_value_filter_applied) {
-            $rarity_value_filters = collect($requested_rarity_value_filters)
-                ->filter(fn ($rarity) => $rarity_options->contains($rarity))
-                ->values()
-                ->all();
-
-            if (($user->rarity_value_filters ?? []) !== $rarity_value_filters) {
-                $user->rarity_value_filters = $rarity_value_filters;
-                $user->save();
-            }
-        } else {
-            $rarity_value_filters = $saved_rarity_value_filters;
-        }
-
-        if (!$rarity_value_filter_applied && empty($rarity_value_filters)) {
-            $rarity_value_filters = $rarity_options->values()->all();
-        }
-
         if ($selected_name && in_array($selected_name, $tracked_names)) {
             $player_data = Player::with(['rods'])->where('player_name', $selected_name)->first();
             
             if ($player_data) {
-                // Calculate total sell value using a light query instead of full models
-                $inventory_items = DB::table('player_inventories')
-                    ->where('player_id', $player_data->id)
-                    ->select('name', 'weight', 'stack', 'mutation', 'shiny', 'sparkling')
-                    ->cursor();
-
-                foreach ($inventory_items as $item) {
-                    $fish_master = $master_fishes[trim($item->name)] ?? null;
-                    if ($fish_master) {
-                        $sell_value = $this->calculateInventorySellValue($item, $fish_master, $master_mutations);
-                        $total_sell_value += $sell_value;
-
-                        if (!empty($rarity_value_filters) && in_array($fish_master->rarity, $rarity_value_filters, true)) {
-                            $selected_rarity_total_value += $sell_value;
-                        }
-                    }
-                }
-
-                $storage_items = DB::table('player_storages')
-                    ->where('player_id', $player_data->id)
-                    ->select('name', 'weight', 'stack', 'mutation', 'shiny', 'sparkling')
-                    ->cursor();
-
-                foreach ($storage_items as $item) {
-                    $fish_master = $master_fishes[trim($item->name)] ?? null;
-                    if ($fish_master) {
-                        $sell_value = $this->calculateInventorySellValue($item, $fish_master, $master_mutations);
-                        $total_storage_value += $sell_value;
-
-                        if (!empty($rarity_value_filters) && in_array($fish_master->rarity, $rarity_value_filters, true)) {
-                            $selected_storage_rarity_total_value += $sell_value;
-                        }
-                    }
-                }
-
                 if ($active_view === 'inventory') {
                     $invQuery = $player_data->inventories();
                     if ($searchItem) {
@@ -138,8 +68,8 @@ class PlayerController extends Controller
 
                     if ($rarity_filter) {
                         $invQuery->join('fishes', 'player_inventories.name', '=', 'fishes.name')
-                                 ->where('fishes.rarity', $rarity_filter)
-                                 ->select('player_inventories.*');
+                            ->where('fishes.rarity', $rarity_filter)
+                            ->select('player_inventories.*');
                     }
 
                     if ($ignore_mutation) {
@@ -191,51 +121,8 @@ class PlayerController extends Controller
             'tracked_players', 'player_data', 'selected_name',
             'inventories', 'storages', 'master_rods', 'searchItem',
             'ignore_mutation', 'master_fishes', 'master_mutations',
-            'total_sell_value', 'selected_rarity_total_value', 'total_storage_value',
-            'selected_storage_rarity_total_value', 'rarity_filter',
-            'rarity_options', 'rarity_value_filters', 'active_view'
+            'rarity_filter', 'rarity_options', 'active_view'
         ));
-    }
-
-    private function calculateInventorySellValue(object $item, $fish_master, $master_mutations): int
-    {
-        $stack_count = max(1, (int) ($item->stack ?? 1));
-        $weight_per_item = (float) ($item->weight ?? 0);
-        $classification = 'Normal';
-
-        if ($fish_master->max_weight > 0) {
-            $max_weight_in_kg = $fish_master->max_weight / 10;
-            $ratio = $max_weight_in_kg > 0 ? ($weight_per_item / $max_weight_in_kg) : 0;
-
-            if ($ratio >= 1.99) {
-                $classification = 'Giant';
-            } elseif ($ratio > 1.0) {
-                $classification = 'Big';
-            }
-        }
-
-        $base_price = ceil($fish_master->price_per_kg * $weight_per_item);
-        $multiplier = 1.0;
-
-        if ($item->mutation && isset($master_mutations[$item->mutation])) {
-            $multiplier *= (float) $master_mutations[$item->mutation]->multiplier;
-        }
-        if ($item->shiny) {
-            $multiplier *= 1.85;
-        }
-        if ($item->sparkling) {
-            $multiplier *= 1.85;
-        }
-        if ($classification === 'Big') {
-            $multiplier *= 1.5;
-        }
-        if ($classification === 'Giant') {
-            $multiplier *= 2.0;
-        }
-
-        $price_per_item = ceil($base_price * $multiplier);
-
-        return $price_per_item * $stack_count;
     }
 
     public function track_player(Request $request)
