@@ -360,11 +360,6 @@
                         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"></i>
                         <input type="text" id="inv-search-input" value="{{ $searchItem }}" placeholder="Search {{ $active_view === 'storage' ? 'Storage' : 'Fish' }}..." class="w-full pl-9 pr-3 py-1.5 text-sm bg-white focus:bg-white rounded-sm border border-neutral-300">
                     </div>
-                    <a href="{{ route('export.fish.xlsx', array_merge(request()->query(), ['view' => $active_view])) }}"
-                       class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-sm border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400 hover:text-neutral-900 whitespace-nowrap">
-                        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
-                        Export XLSX
-                    </a>
                 </div>
             </div>
             
