@@ -8,6 +8,7 @@ class PlayerStorage extends Model
 {
     protected $fillable = [
         'player_id',
+        'sync_key',
         'sparkling',
         'name',
         'weight',

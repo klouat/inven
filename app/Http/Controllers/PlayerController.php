@@ -11,6 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Exception;
@@ -21,8 +23,11 @@ class PlayerController extends Controller
     {
         $user = Auth::user();
         
-        // Fetch players the current user is tracking
-        $tracked_players = $user->trackedPlayers;
+        // Fetch only the fields the dashboard needs for the tracked-player switcher.
+        $tracked_players = $user->trackedPlayers()
+            ->select(['id', 'player_name'])
+            ->orderBy('player_name')
+            ->get();
         $tracked_names = $tracked_players->pluck('player_name')->toArray();
         
         $selected_name = $request->query('player');
@@ -33,6 +38,10 @@ class PlayerController extends Controller
         $player_data = null;
         $inventories = null;
         $storages = null;
+        $master_rods = collect();
+        $master_fishes = collect();
+        $master_mutations = collect();
+        $rarity_options = collect();
         $active_view = $request->query('view', 'inventory');
         if (!in_array($active_view, ['inventory', 'storage'], true)) {
             $active_view = 'inventory';
@@ -42,28 +51,17 @@ class PlayerController extends Controller
         $searchItem     = $request->query('search_item', '');
         $ignore_mutation = $request->query('ignore_mutation') === 'true';
         $rarity_filter  = $request->query('rarity_filter', '');
-        // Fetch Master Data directly (Cache exceeds cPanel memcached/packet limits)
-        $master_rods = \App\Models\MasterRod::all()->keyBy('name');
-        
-        $master_fishes = \App\Models\Fish::all()->keyBy(function($fish) {
-            return trim($fish->name);
-        });
-        
-        $master_mutations = \App\Models\Mutation::all()->keyBy(function($mutation) {
-            return trim($mutation->name);
-        });
-
-        $rarity_options = \App\Models\Fish::whereNotNull('rarity')
-            ->distinct()
-            ->orderBy('rarity')
-            ->pluck('rarity');
 
         if ($selected_name && in_array($selected_name, $tracked_names)) {
             $player_data = Player::with(['rods'])->where('player_name', $selected_name)->first();
             
             if ($player_data) {
+                [$master_rods, $master_fishes, $master_mutations, $rarity_options] = $this->loadDashboardLookups();
+
                 if ($active_view === 'inventory') {
-                    $invQuery = $player_data->inventories()->latest('id');
+                    $invQuery = $player_data->inventories()
+                        ->orderByDesc('updated_at')
+                        ->orderByDesc('id');
                     if ($searchItem) {
                         $invQuery->where('player_inventories.name', 'like', '%' . $searchItem . '%');
                     }
@@ -85,7 +83,9 @@ class PlayerController extends Controller
                         $inventories = $invQuery->paginate(30)->withQueryString();
                     }
                 } else {
-                    $storageQuery = $player_data->storages()->latest('id');
+                    $storageQuery = $player_data->storages()
+                        ->orderByDesc('updated_at')
+                        ->orderByDesc('id');
                     if ($searchItem) {
                         $storageQuery->where('player_storages.name', 'like', '%' . $searchItem . '%');
                     }
@@ -162,123 +162,41 @@ class PlayerController extends Controller
 
             DB::beginTransaction();
 
-            $master_fishes = \App\Models\Fish::all()->keyBy(fn ($fish) => trim($fish->name));
-            $master_mutations = \App\Models\Mutation::all()->keyBy(fn ($mutation) => trim($mutation->name));
             $now = now();
+            $inventory_items = $this->normalizeItems($json_data['inventory'] ?? []);
+            $storage_items = $this->normalizeItems($json_data['storage'] ?? []);
+            [$master_fishes, $master_mutations] = $this->loadPricingLookups($inventory_items, $storage_items);
 
             $player = Player::updateOrCreate(
                 ['player_name' => $json_data['playerName']],
                 ['coins' => $json_data['coins'] ?? 0]
             );
-            $player->touch();
 
-            // Re-sync rods logic seamlessly
-            $player->rods()->delete();
-            
-            if (!empty($json_data['rods'])) {
-                $rods_chunks = array_chunk($json_data['rods'], 500);
-                foreach ($rods_chunks as $chunk) {
-                    $rods_data = [];
-                    foreach ($chunk as $rod) {
-                        $rods_data[] = [
-                            'player_id' => $player->id,
-                            'name' => $rod['name'] ?? $rod['Name'] ?? 'Unknown Rod',
-                            'icon' => $rod['icon'] ?? $rod['Icon'] ?? '',
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ];
-                    }
-                    PlayerRod::insert($rods_data);
-                }
-            }
+            $this->syncRods($player, $json_data['rods'] ?? [], $now);
 
-            // Batched inventory insertion for optimization
-            $player->inventories()->delete();
             $inventory_rows_count = 0;
             $inventory_stack_count = 0;
             $inventory_total_value = 0;
-            
-            if (!empty($json_data['inventory'])) {
-                $inventory_chunks = array_chunk($json_data['inventory'], 500);
-                foreach ($inventory_chunks as $chunk) {
-                    $inventory_data = [];
-                    foreach ($chunk as $item) {
-                        $stack = max(1, (int) ($item['stack'] ?? 1));
-                        $inventory_rows_count++;
-                        $inventory_stack_count += $stack;
-                        $inventory_total_value += $this->calculateSellPrice(
-                            (object) [
-                                'name' => $item['name'] ?? '',
-                                'weight' => $item['weight'] ?? 0,
-                                'stack' => $stack,
-                                'mutation' => $item['mutation'] ?? null,
-                                'shiny' => $item['shiny'] ?? false,
-                                'sparkling' => $item['sparkling'] ?? false,
-                            ],
-                            $master_fishes,
-                            $master_mutations
-                        );
+            [$inventory_rows_count, $inventory_stack_count, $inventory_total_value] = $this->syncItemSnapshot(
+                $player->inventories(),
+                $inventory_items,
+                PlayerInventory::class,
+                $master_fishes,
+                $master_mutations,
+                $now
+            );
 
-                        $inventory_data[] = [
-                            'player_id' => $player->id,
-                            'sparkling' => $item['sparkling'] ?? false,
-                            'name' => $item['name'],
-                            'weight' => $item['weight'] ?? 0,
-                            'shiny' => $item['shiny'] ?? false,
-                            'stack' => $stack,
-                            'mutation' => $item['mutation'] ?? null,
-                            'favourited' => $item['favourited'] ?? false,
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ];
-                    }
-                    PlayerInventory::insert($inventory_data);
-                }
-            }
-
-            // Batched storage insertion mirrors inventory payload handling
-            $player->storages()->delete();
             $storage_rows_count = 0;
             $storage_stack_count = 0;
             $storage_total_value = 0;
-
-            if (!empty($json_data['storage'])) {
-                $storage_chunks = array_chunk($json_data['storage'], 500);
-                foreach ($storage_chunks as $chunk) {
-                    $storage_data = [];
-                    foreach ($chunk as $item) {
-                        $stack = max(1, (int) ($item['stack'] ?? 1));
-                        $storage_rows_count++;
-                        $storage_stack_count += $stack;
-                        $storage_total_value += $this->calculateSellPrice(
-                            (object) [
-                                'name' => $item['name'] ?? '',
-                                'weight' => $item['weight'] ?? 0,
-                                'stack' => $stack,
-                                'mutation' => $item['mutation'] ?? null,
-                                'shiny' => $item['shiny'] ?? false,
-                                'sparkling' => $item['sparkling'] ?? false,
-                            ],
-                            $master_fishes,
-                            $master_mutations
-                        );
-
-                        $storage_data[] = [
-                            'player_id' => $player->id,
-                            'sparkling' => $item['sparkling'] ?? false,
-                            'name' => $item['name'],
-                            'weight' => $item['weight'] ?? 0,
-                            'shiny' => $item['shiny'] ?? false,
-                            'stack' => $stack,
-                            'mutation' => $item['mutation'] ?? null,
-                            'favourited' => $item['favourited'] ?? false,
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ];
-                    }
-                    PlayerStorage::insert($storage_data);
-                }
-            }
+            [$storage_rows_count, $storage_stack_count, $storage_total_value] = $this->syncItemSnapshot(
+                $player->storages(),
+                $storage_items,
+                PlayerStorage::class,
+                $master_fishes,
+                $master_mutations,
+                $now
+            );
 
             $player->update([
                 'coins' => $json_data['coins'] ?? 0,
@@ -376,6 +294,215 @@ class PlayerController extends Controller
         }
 
         return (int) ceil($base_price * $multiplier) * $stack_count;
+    }
+
+    protected function normalizeItems(array $items): array
+    {
+        return array_map(function (array $item) {
+            return [
+                'sparkling' => (bool) ($item['sparkling'] ?? false),
+                'name' => $item['name'] ?? '',
+                'weight' => (float) ($item['weight'] ?? 0),
+                'shiny' => (bool) ($item['shiny'] ?? false),
+                'stack' => max(1, (int) ($item['stack'] ?? 1)),
+                'mutation' => $item['mutation'] ?? null,
+                'favourited' => (bool) ($item['favourited'] ?? false),
+            ];
+        }, $items);
+    }
+
+    protected function loadPricingLookups(array $inventory_items, array $storage_items): array
+    {
+        $snapshot_items = collect(array_merge($inventory_items, $storage_items));
+
+        $fish_names = $snapshot_items
+            ->pluck('name')
+            ->filter()
+            ->map(fn ($name) => trim((string) $name))
+            ->unique()
+            ->values();
+
+        $mutation_names = $snapshot_items
+            ->pluck('mutation')
+            ->filter()
+            ->map(fn ($name) => trim((string) $name))
+            ->unique()
+            ->values();
+
+        $master_fishes = \App\Models\Fish::query()
+            ->when($fish_names->isNotEmpty(), fn ($query) => $query->whereIn('name', $fish_names))
+            ->get()
+            ->keyBy(fn ($fish) => trim($fish->name));
+
+        $master_mutations = \App\Models\Mutation::query()
+            ->when($mutation_names->isNotEmpty(), fn ($query) => $query->whereIn('name', $mutation_names))
+            ->get()
+            ->keyBy(fn ($mutation) => trim($mutation->name));
+
+        return [$master_fishes, $master_mutations];
+    }
+
+    protected function loadDashboardLookups(): array
+    {
+        $ttl = now()->addMinutes(30);
+
+        $master_rods = Cache::remember('dashboard:master_rods:keyed', $ttl, function () {
+            return \App\Models\MasterRod::query()
+                ->select([
+                    'id',
+                    'name',
+                    'icon',
+                    'image_url',
+                    'description',
+                    'hint',
+                    'from',
+                    'strength',
+                    'line_distance',
+                    'luck',
+                    'lure_speed',
+                    'resilience',
+                    'control',
+                    'level_requirement',
+                    'disturbance',
+                    'mutation_pool',
+                    'preferred_disturbance',
+                ])
+                ->orderBy('name')
+                ->get()
+                ->keyBy('name');
+        });
+
+        $master_fishes = Cache::remember('dashboard:master_fishes:keyed', $ttl, function () {
+            return \App\Models\Fish::query()
+                ->select(['id', 'name', 'price_per_kg', 'max_weight', 'rarity', 'icon', 'from'])
+                ->orderBy('name')
+                ->get()
+                ->keyBy(fn ($fish) => trim($fish->name));
+        });
+
+        $master_mutations = Cache::remember('dashboard:master_mutations:keyed', $ttl, function () {
+            return \App\Models\Mutation::query()
+                ->select(['id', 'name', 'multiplier'])
+                ->orderBy('name')
+                ->get()
+                ->keyBy(fn ($mutation) => trim($mutation->name));
+        });
+
+        $rarity_options = Cache::remember('dashboard:rarity_options', $ttl, function () {
+            return \App\Models\Fish::query()
+                ->whereNotNull('rarity')
+                ->distinct()
+                ->orderBy('rarity')
+                ->pluck('rarity');
+        });
+
+        return [$master_rods, $master_fishes, $master_mutations, $rarity_options];
+    }
+
+    protected function syncRods(Player $player, array $rods, $now): void
+    {
+        $rows = [];
+        $sync_keys = [];
+        $occurrences = [];
+
+        foreach ($rods as $rod) {
+            $normalized = [
+                'name' => $rod['name'] ?? $rod['Name'] ?? 'Unknown Rod',
+                'icon' => $rod['icon'] ?? $rod['Icon'] ?? '',
+            ];
+            $sync_key = $this->makeSnapshotSyncKey($normalized, $occurrences);
+            $sync_keys[] = $sync_key;
+            $rows[] = [
+                'player_id' => $player->id,
+                'sync_key' => $sync_key,
+                'name' => $normalized['name'],
+                'icon' => $normalized['icon'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        if (!empty($rows)) {
+            PlayerRod::upsert($rows, ['player_id', 'sync_key'], ['name', 'icon', 'updated_at']);
+            $player->rods()->whereNotIn('sync_key', $sync_keys)->delete();
+            return;
+        }
+
+        $player->rods()->delete();
+    }
+
+    protected function syncItemSnapshot(
+        HasMany $relation,
+        array $items,
+        string $model_class,
+        Collection $master_fishes,
+        Collection $master_mutations,
+        $now
+    ): array {
+        $player_id = $relation->getParent()->getKey();
+        $rows = [];
+        $sync_keys = [];
+        $occurrences = [];
+        $rows_count = 0;
+        $stack_count = 0;
+        $total_value = 0;
+
+        foreach ($items as $item) {
+            $sync_key = $this->makeSnapshotSyncKey($item, $occurrences);
+            $sync_keys[] = $sync_key;
+            $rows_count++;
+            $stack_count += $item['stack'];
+            $total_value += $this->calculateSellPrice((object) $item, $master_fishes, $master_mutations);
+            $rows[] = [
+                'player_id' => $player_id,
+                'sync_key' => $sync_key,
+                'sparkling' => $item['sparkling'],
+                'name' => $item['name'],
+                'weight' => $item['weight'],
+                'shiny' => $item['shiny'],
+                'stack' => $item['stack'],
+                'mutation' => $item['mutation'],
+                'favourited' => $item['favourited'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        if (!empty($rows)) {
+            foreach (array_chunk($rows, 500) as $chunk) {
+                $model_class::upsert(
+                    $chunk,
+                    ['player_id', 'sync_key'],
+                    ['sparkling', 'name', 'weight', 'shiny', 'stack', 'mutation', 'favourited', 'updated_at']
+                );
+            }
+
+            $relation->whereNotIn('sync_key', $sync_keys)->delete();
+        } else {
+            $relation->delete();
+        }
+
+        return [$rows_count, $stack_count, $total_value];
+    }
+
+    protected function makeSnapshotSyncKey(array $attributes, array &$occurrences): string
+    {
+        $signature = json_encode([
+            'sparkling' => (bool) ($attributes['sparkling'] ?? false),
+            'name' => trim((string) ($attributes['name'] ?? '')),
+            'weight' => round((float) ($attributes['weight'] ?? 0), 6),
+            'shiny' => (bool) ($attributes['shiny'] ?? false),
+            'stack' => max(1, (int) ($attributes['stack'] ?? 1)),
+            'mutation' => array_key_exists('mutation', $attributes) && $attributes['mutation'] !== null
+                ? trim((string) $attributes['mutation'])
+                : null,
+            'favourited' => (bool) ($attributes['favourited'] ?? false),
+            'icon' => (string) ($attributes['icon'] ?? ''),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $occurrences[$signature] = ($occurrences[$signature] ?? 0) + 1;
+
+        return sha1($signature.'#'.$occurrences[$signature]);
     }
 
 }

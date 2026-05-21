@@ -6,5 +6,5 @@ use Illuminate\Database\Eloquent\Model;
 
 class PlayerRod extends Model
 {
-    protected $fillable = ['player_id', 'name', 'icon'];
+    protected $fillable = ['player_id', 'sync_key', 'name', 'icon'];
 }
